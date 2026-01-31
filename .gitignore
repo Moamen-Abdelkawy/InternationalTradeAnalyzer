@@ -1,5 +1,26 @@
-# Ignore all contents in the directory
-data/BACI/*
+# IDE/Editor
+.vscode/
+.idea/
 
-# But do not ignore the .gitkeep file
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables (already pushed with placeholders, ignore local changes)
+SUBSCRIPTION_KEY.env
+
+# Data - BACI directory (keep structure, ignore contents)
+data/BACI/*
 !data/BACI/.gitkeep
