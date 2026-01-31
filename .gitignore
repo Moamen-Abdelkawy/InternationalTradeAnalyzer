@@ -1,1 +1,5 @@
-data/BACI/
+# Ignore all contents in the directory
+data/BACI/*
+
+# But do not ignore the .gitkeep file
+!data/BACI/.gitkeep
