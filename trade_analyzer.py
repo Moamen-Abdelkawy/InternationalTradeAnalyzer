@@ -1939,7 +1939,7 @@ class TradeAnalyzer:
             print(f"Direction:       {flow_desc}")
             print("="*60)
 
-            raw_comtrade = self.fetch_comtrade_data(freq_code, period, reporter_code, cmd_code, flow_code, partner_code if partner_choice == 'specific' else None)
+            raw_comtrade = self.fetch_comtrade_data(freq_code, period, reporter_code, cmd_code, flow_code, None)
 
             if raw_comtrade is None or len(raw_comtrade) == 0:
                 print("\n✗ Analysis cancelled: No data returned from COMTRADE API")
