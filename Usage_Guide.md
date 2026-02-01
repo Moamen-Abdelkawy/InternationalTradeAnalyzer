@@ -29,7 +29,7 @@ Before you begin, make sure you have:
 
 - A computer running **Windows**, **macOS**, or **Linux**
 - An internet connection
-- At least **3 GB of free disk space** (for the BACI database)
+- At least **8 GB of free disk space** (for the BACI database)
 - A web browser
 
 ---
