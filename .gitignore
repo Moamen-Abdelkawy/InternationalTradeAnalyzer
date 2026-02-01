@@ -2,6 +2,9 @@
 .vscode/
 .idea/
 
+# Claude Code
+.claude/
+
 # Python
 __pycache__/
 *.pyc
@@ -18,9 +21,16 @@ env/
 .DS_Store
 Thumbs.db
 
+# Development utilities (local only)
+utils/
+
 # Environment variables (already pushed with placeholders, ignore local changes)
 SUBSCRIPTION_KEY.env
 
 # Data - BACI directory (keep structure, ignore contents)
 data/BACI/*
 !data/BACI/.gitkeep
+
+# Output directory (keep structure, ignore contents)
+output/*
+!output/.gitkeep
