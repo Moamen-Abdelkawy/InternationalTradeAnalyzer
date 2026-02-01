@@ -101,11 +101,9 @@ InternationalTradeAnalyzer/
 │   └── meta/                  # Reference data (country/product codes)
 │
 ├── output/                    # Generated analysis results
-│   ├── *.csv                  # Data exports
-│   ├── *.txt                  # Summary reports
-│   └── *.png                  # Visualizations
-│
-└── utils/                     # Development utilities
+    ├── *.csv                  # Data exports
+    ├── *.txt                  # Summary reports
+    └── *.png                  # Visualizations
 ```
 
 ---
