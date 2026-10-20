@@ -62,6 +62,7 @@ class TradeAnalyzer:
         self.subscription_key = self.load_subscription_key()
         self.comtrade_reporter_cache = None
         self.comtrade_partner_cache = None
+        self.comtrade_hs92_cache = None
 
         # Load reference data
         self.load_baci_reference_data()
@@ -98,6 +99,21 @@ class TradeAnalyzer:
         except Exception as e:
             print(f"⚠ Warning: Could not load BACI reference data: {e}")
             print("  BACI data will not be available\n")
+
+    def get_hs92_descriptions(self):
+        """Get HS 1992 chapter and heading descriptions from COMTRADE (BACI only lists 6-digit codes)"""
+        if self.comtrade_hs92_cache is None:
+            try:
+                reference = comtradeapicall.getReference('cmd:H0')
+                # Texts look like "0401 - Milk and cream, ...", some with double spaces
+                self.comtrade_hs92_cache = pd.DataFrame({
+                    'code': reference['id'].astype(str),
+                    'description': reference['text'].str.split(' - ', n=1).str[1].str.split().str.join(' ')
+                })
+            except Exception as e:
+                print(f"  ⚠ Warning: Could not load HS chapter/heading descriptions from COMTRADE: {e}")
+                return pd.DataFrame(columns=['code', 'description'])
+        return self.comtrade_hs92_cache
 
     def get_frequency_input(self):
         """Get frequency (Annual or Monthly) from user"""
@@ -734,12 +750,18 @@ class TradeAnalyzer:
 
         print(f"\nLoading BACI data for {len(years)} year(s)...")
         all_data = []
+        total_records = 0
 
         # Prepare product filter
         # BACI stores product codes as 6-digit text with leading zeros (e.g., "010210").
         # They are read and matched as text: compared as numbers, 0401 (milk and cream)
         # would become 401 and also match 4010-4017 (rubber)
         product_code = self.normalize_hs_code(product_code)
+
+        # Special codes select all products, grouped as in COMTRADE: TOTAL as a single
+        # product, AG2/AG4/AG6 by 2-digit chapter, 4-digit heading or 6-digit subheading
+        special_code_digits = {'TOTAL': 0, 'AG2': 2, 'AG4': 4, 'AG6': 6}
+        all_products = product_code in special_code_digits
 
         # Determine which column to filter for country based on direction
         # BACI columns: t (year), i (exporter), j (importer), k (product), v (value), q (quantity)
@@ -749,6 +771,8 @@ class TradeAnalyzer:
         else:  # Exports - reporter is exporter (i)
             country_col = 'i'
             partner_col = 'j'
+
+        group_cols = [partner_col, 'k', 't'] if keep_subcategories else [partner_col, 't']
 
         for year in years:
             filename = f"BACI_HS92_Y{year}_V202601.csv"
@@ -772,10 +796,12 @@ class TradeAnalyzer:
                     if len(chunk_filtered) == 0:
                         continue
 
-                    # Filter by product (exact match or prefix match for subcategories)
                     # zfill restores leading zeros in case a file stores codes without them
                     chunk_filtered = chunk_filtered.assign(k=chunk_filtered['k'].str.zfill(6))
-                    chunk_filtered = chunk_filtered[chunk_filtered['k'].str.startswith(product_code, na=False)]
+
+                    # Filter by product (exact match or prefix match for subcategories)
+                    if not all_products:
+                        chunk_filtered = chunk_filtered[chunk_filtered['k'].str.startswith(product_code, na=False)]
 
                     if len(chunk_filtered) > 0:
                         year_data.append(chunk_filtered)
@@ -783,7 +809,13 @@ class TradeAnalyzer:
 
                 if year_data:
                     combined_year = pd.concat(year_data, ignore_index=True)
+                    if all_products:
+                        # Sum each year at the requested level so raw all-product rows don't pile up in memory
+                        digits = special_code_digits[product_code]
+                        combined_year['k'] = combined_year['k'].str[:digits] if digits else 'TOTAL'
+                        combined_year = combined_year.groupby(group_cols, as_index=False)[['v', 'q']].sum()
                     all_data.append(combined_year)
+                    total_records += records_loaded
                     print(f"✓ {records_loaded:,} records")
                 else:
                     print(f"✓ 0 records (no matching data)")
@@ -798,7 +830,7 @@ class TradeAnalyzer:
 
         # Combine all years
         filtered = pd.concat(all_data, ignore_index=True)
-        print(f"  ✓ Total: {len(filtered):,} relevant records")
+        print(f"  ✓ Total: {total_records:,} relevant records")
 
         # Aggregate - with or without subcategories
         if keep_subcategories:
@@ -826,13 +858,16 @@ class TradeAnalyzer:
             )
 
             # Map product codes to descriptions
-            # Both BACI data and reference file hold 6-digit text codes with leading zeros (e.g., "010210")
-            aggregated = aggregated.merge(
-                self.baci_product_codes[['code', 'description']],
-                left_on='product_code',
-                right_on='code',
-                how='left'
-            )
+            # 6-digit codes use the BACI reference (text codes with leading zeros, e.g., "010210");
+            # AG2/AG4 chapters and headings use COMTRADE's HS 1992 reference
+            if product_code in ['AG2', 'AG4']:
+                product_descriptions = self.get_hs92_descriptions()
+            else:
+                product_descriptions = self.baci_product_codes[['code', 'description']]
+
+            # map, not merge: with the patched pd.concat, a merge without any match (e.g., TOTAL)
+            # drops the description column instead of leaving it empty
+            aggregated['description'] = aggregated['product_code'].map(product_descriptions.set_index('code')['description'])
 
             # Clean up
             aggregated = aggregated[['partner_code', 'country_name', 'product_code', 'description', 'year', 'value_usd', 'quantity_mt']]
