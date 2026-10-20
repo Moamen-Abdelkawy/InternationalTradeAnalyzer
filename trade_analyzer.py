@@ -526,7 +526,8 @@ class TradeAnalyzer:
                         print(f"✓ Product: {product_input} - {baci_desc}")
                         confirm = input("Confirm selection (Y/N): ").strip().upper()
                         if confirm in ['Y', 'YES']:
-                            return product_input, baci_desc
+                            # Keep the code in the description: output filenames are built from it
+                            return product_input, f"{product_input} - {baci_desc}"
                     else:
                         # No match in BACI reference, but code can still be used
                         print(f"✓ Using product code: {product_input}")
