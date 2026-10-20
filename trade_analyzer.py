@@ -92,6 +92,8 @@ class TradeAnalyzer:
         """Load BACI country and product code mappings"""
         try:
             self.baci_country_codes = pd.read_csv(self.baci_dir / "country_codes_V202601.csv")
+            # CEPII's file stores some names double-encoded ("TÃ¼rkiye"), so decode them back
+            self.baci_country_codes['country_name'] = self.baci_country_codes['country_name'].apply(self.fix_double_encoding)
             # Read product codes as text so leading zeros survive ("010111", not 10111)
             self.baci_product_codes = pd.read_csv(self.baci_dir / "product_codes_HS92_V202601.csv", dtype={'code': str})
             self.baci_product_codes['code'] = self.baci_product_codes['code'].str.zfill(6)
@@ -99,6 +101,14 @@ class TradeAnalyzer:
         except Exception as e:
             print(f"⚠ Warning: Could not load BACI reference data: {e}")
             print("  BACI data will not be available\n")
+
+    def fix_double_encoding(self, text):
+        """Repair text that was UTF-8 encoded twice (e.g., "TÃ¼rkiye" -> "Türkiye")"""
+        try:
+            return text.encode('latin-1').decode('utf-8')
+        except (UnicodeError, AttributeError):
+            # Correctly encoded text fails one of the two steps and is kept as is
+            return text
 
     def get_hs92_descriptions(self):
         """Get HS 1992 chapter and heading descriptions from COMTRADE (BACI only lists 6-digit codes)"""
@@ -1918,6 +1928,11 @@ class TradeAnalyzer:
         cmd_code, product_desc = self.get_product_input()
         flow_code, flow_desc = self.get_trade_direction()
         partner_choice, partner_code, partner_name, partner_baci_code = self.get_partner_choice()
+
+        # BACI rows carry BACI's country names, which can differ from COMTRADE's (e.g., Nauru vs Naoero)
+        if data_source == 'BACI' and partner_baci_code is not None:
+            baci_partner = self.baci_country_codes[self.baci_country_codes['country_code'] == partner_baci_code]
+            partner_name = baci_partner.iloc[0]['country_name']
 
         # Determine years/periods for source info
         if freq_code == 'A':
