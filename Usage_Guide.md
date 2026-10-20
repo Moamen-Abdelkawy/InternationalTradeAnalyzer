@@ -375,6 +375,8 @@ Enter the HS product code:
 - 4-digit heading: `1001` (Wheat)
 - 6-digit subheading: `100190` (Wheat, other)
 
+**Note**: Codes in chapters 01-09 start with a zero, e.g. `0401` (Milk and cream). If you leave the zero out (`401`), it is added back automatically.
+
 Reference: Product codes can be found in `data/meta/product_codes_HS92_V202601.csv`
 
 ### Step 8.6: Trade Direction

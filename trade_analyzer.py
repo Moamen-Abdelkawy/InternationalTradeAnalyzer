@@ -91,7 +91,9 @@ class TradeAnalyzer:
         """Load BACI country and product code mappings"""
         try:
             self.baci_country_codes = pd.read_csv(self.baci_dir / "country_codes_V202601.csv")
-            self.baci_product_codes = pd.read_csv(self.baci_dir / "product_codes_HS92_V202601.csv")
+            # Read product codes as text so leading zeros survive ("010111", not 10111)
+            self.baci_product_codes = pd.read_csv(self.baci_dir / "product_codes_HS92_V202601.csv", dtype={'code': str})
+            self.baci_product_codes['code'] = self.baci_product_codes['code'].str.zfill(6)
             print("✓ BACI reference data loaded\n")
         except Exception as e:
             print(f"⚠ Warning: Could not load BACI reference data: {e}")
@@ -408,6 +410,17 @@ class TradeAnalyzer:
                         print(f"  {row['code']}: {row['name']}")
                     print("\nPlease enter a more specific name or use the country code.")
 
+    def normalize_hs_code(self, code):
+        """Return an HS code as text, restoring a leading zero that was dropped.
+
+        HS codes have 2, 4 or 6 digits and chapters 01-09 start with a zero,
+        which integer parsing and spreadsheets drop (040110 becomes 40110).
+        """
+        code = str(code).strip()
+        if len(code) in (1, 3, 5) and code.isdigit() and not code.startswith('0'):
+            return '0' + code
+        return code
+
     def get_product_input(self):
         """Get and validate product code input with subcategory details"""
         while True:
@@ -439,34 +452,31 @@ class TradeAnalyzer:
             if product_input in ['TOTAL', 'AG2', 'AG4', 'AG6']:
                 return product_input, f"{product_input} - All products at specified level"
 
+            # Keep leading zeros: without them, 0401 (milk and cream) would also match 4010-4017 (rubber)
+            normalized_input = self.normalize_hs_code(product_input)
+            if normalized_input != product_input:
+                print(f"⚠ Interpreting '{product_input}' as {normalized_input} (HS codes have 2, 4 or 6 digits)")
+                product_input = normalized_input
+
             # Check BACI for exact match and subcategories
             baci_desc = None
             subcategories = None
 
             if self.baci_product_codes is not None:
                 try:
-                    # Normalize product code for comparison
-                    # Reference file has 6-digit codes with leading zeros (e.g., "010210")
-                    # User might enter with or without leading zeros
-                    product_input_clean = product_input.lstrip('0') or '0'  # Remove leading zeros for comparison
-
-                    # Create normalized code column for matching (strip leading zeros from reference)
-                    ref_codes = self.baci_product_codes.copy()
-                    ref_codes['code_normalized'] = ref_codes['code'].astype(str).str.lstrip('0')
-                    ref_codes['code_normalized'] = ref_codes['code_normalized'].replace('', '0')
+                    # Reference codes are 6-digit text with leading zeros (e.g., "010210")
+                    ref_codes = self.baci_product_codes
 
                     # Check for exact match
-                    exact_match = ref_codes[ref_codes['code_normalized'] == product_input_clean]
+                    exact_match = ref_codes[ref_codes['code'] == product_input]
 
                     if not exact_match.empty:
                         baci_desc = exact_match.iloc[0]['description']
 
-                    # Check for subcategories (codes that start with input pattern)
-                    # Use the original code column for prefix matching
-                    input_len = len(product_input_clean)
+                    # Check for subcategories (longer codes that start with the input)
                     subcategories = ref_codes[
-                        (ref_codes['code_normalized'].str[:input_len] == product_input_clean) &
-                        (ref_codes['code_normalized'].str.len() > input_len)
+                        ref_codes['code'].str.startswith(product_input) &
+                        (ref_codes['code'].str.len() > len(product_input))
                     ]
 
                     if not subcategories.empty:
@@ -726,14 +736,10 @@ class TradeAnalyzer:
         all_data = []
 
         # Prepare product filter
-        # BACI stores product codes as integers (e.g., 10210 for HS code 010210)
-        # User may enter with or without leading zeros
-        # Normalize by removing leading zeros for consistent comparison
-        product_code_clean = str(product_code).lstrip('0') or '0'
-        try:
-            product_int = int(product_code_clean)
-        except:
-            product_int = None
+        # BACI stores product codes as 6-digit text with leading zeros (e.g., "010210").
+        # They are read and matched as text: compared as numbers, 0401 (milk and cream)
+        # would become 401 and also match 4010-4017 (rubber)
+        product_code = self.normalize_hs_code(product_code)
 
         # Determine which column to filter for country based on direction
         # BACI columns: t (year), i (exporter), j (importer), k (product), v (value), q (quantity)
@@ -759,7 +765,7 @@ class TradeAnalyzer:
                 year_data = []
                 records_loaded = 0
 
-                for chunk in pd.read_csv(filepath, chunksize=chunk_size):
+                for chunk in pd.read_csv(filepath, chunksize=chunk_size, dtype={'k': str}):
                     # Filter by country first (most restrictive)
                     chunk_filtered = chunk[chunk[country_col] == reporter_baci_code]
 
@@ -767,16 +773,9 @@ class TradeAnalyzer:
                         continue
 
                     # Filter by product (exact match or prefix match for subcategories)
-                    # BACI 'k' column is integer, so compare accordingly
-                    if product_int is not None:
-                        # For prefix matching: convert k to string (no leading zeros) and check prefix
-                        k_str = chunk_filtered['k'].astype(str)
-                        chunk_filtered = chunk_filtered[
-                            (chunk_filtered['k'] == product_int) |
-                            (k_str.str.startswith(product_code_clean))
-                        ]
-                    else:
-                        chunk_filtered = chunk_filtered[chunk_filtered['k'].astype(str) == product_code_clean]
+                    # zfill restores leading zeros in case a file stores codes without them
+                    chunk_filtered = chunk_filtered.assign(k=chunk_filtered['k'].str.zfill(6))
+                    chunk_filtered = chunk_filtered[chunk_filtered['k'].str.startswith(product_code, na=False)]
 
                     if len(chunk_filtered) > 0:
                         year_data.append(chunk_filtered)
@@ -827,19 +826,13 @@ class TradeAnalyzer:
             )
 
             # Map product codes to descriptions
-            # BACI data has integer codes (e.g., 10210), reference file has string codes with leading zeros (e.g., "010210")
-            # Normalize both by padding integers to 6 digits for proper matching
-            aggregated['product_code_padded'] = aggregated['product_code'].astype(str).str.zfill(6)
-            product_codes_for_merge = self.baci_product_codes[['code', 'description']].copy()
-            product_codes_for_merge['code'] = product_codes_for_merge['code'].astype(str).str.zfill(6)
-
+            # Both BACI data and reference file hold 6-digit text codes with leading zeros (e.g., "010210")
             aggregated = aggregated.merge(
-                product_codes_for_merge,
-                left_on='product_code_padded',
+                self.baci_product_codes[['code', 'description']],
+                left_on='product_code',
                 right_on='code',
                 how='left'
             )
-            aggregated.drop(columns=['product_code_padded'], inplace=True)
 
             # Clean up
             aggregated = aggregated[['partner_code', 'country_name', 'product_code', 'description', 'year', 'value_usd', 'quantity_mt']]
