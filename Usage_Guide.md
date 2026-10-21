@@ -113,7 +113,7 @@ A "repository" (or "repo") is simply a folder containing all the project files. 
 
 ### Option A: Download as ZIP (Easiest - No Git Required)
 
-1. Go to: **https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer**
+1. Go to: **https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer**
 
 2. Click the green **"Code"** button
 
@@ -132,7 +132,7 @@ A "repository" (or "repo") is simply a folder containing all the project files. 
 If you have Git installed, open a terminal and run:
 
 ```bash
-git clone https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer.git
+git clone https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer.git
 ```
 
 ---
@@ -217,34 +217,28 @@ To download trade data from the UN COMTRADE database, you need a free API key.
 
 ### Step 5.2: Configure Your API Credentials
 
-1. Open the International Trade Analyzer folder
+Your credentials go in a file named `SUBSCRIPTION_KEY.env` in the International Trade Analyzer folder. The file is not part of the download, so that nobody's key is ever shared: you create it yourself.
 
-2. Find the file named `SUBSCRIPTION_KEY.env`
+1. Open a **text editor**:
+   - **Windows**: **Notepad**
+   - **macOS**: **TextEdit**, then choose **Format** > **Make Plain Text**
 
-3. Open this file with a **text editor**:
-   - **Windows**: Right-click the file > **Open with** > **Notepad**
-   - **macOS**: Right-click the file > **Open With** > **TextEdit**
+2. Type the following, with your own credentials **between the double quotes**:
 
-4. You will see content like this:
-   ```
-   # comtrade - v1 API Credentials
-   # Enter your credentials inside the double quotes
-   
-   COMTRADE_USERNAME="Your COMTRADE Username Here"
-   PRIMARY_KEY="Your Primary Key"
-   SECONDARY_KEY="Your Secondary Key"
-   ```
-   
-5. Fill in your credentials **between the double quotes**. For example:
-   
    ```
    # comtrade - v1 API Credentials
    COMTRADE_USERNAME="john.smith@email.com"
    PRIMARY_KEY="a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
    SECONDARY_KEY="p6o5n4m3l2k1j0i9h8g7f6e5d4c3b2a1"
    ```
-   
-6. **Save the file** and close the text editor
+
+   The analyzer uses the `PRIMARY_KEY`; the other two lines are there for your own reference.
+
+3. **Save the file** in the International Trade Analyzer folder, named exactly `SUBSCRIPTION_KEY.env`:
+   - **Windows**: in Notepad's **Save as type** list, choose **All files (\*.\*)**, so that Notepad does not add `.txt` to the name
+   - **macOS**: if TextEdit offers to add `.txt`, choose **Use ".env"**
+
+The file stays on your computer: the repository is set to ignore it, so it is never uploaded with the code.
 
 ---
 
@@ -742,7 +736,7 @@ Your Python is newer than 3.14, and some of the packages are not yet available f
 
 The API credentials file is missing or misnamed. It is needed for COMTRADE queries only.
 
-**Solution**: Make sure the file `SUBSCRIPTION_KEY.env` exists in the main folder and contains your API credentials.
+**Solution**: Create the file `SUBSCRIPTION_KEY.env` in the main folder as described in Step 5.2. If you created it with Notepad, check that it was not saved as `SUBSCRIPTION_KEY.env.txt`.
 
 ### "No trade recorded for this query" or "No data returned from COMTRADE API"
 
@@ -915,7 +909,7 @@ If you use this tool in your research, please consider citing it:
 
 ```
 Abdelkawy, M. (2026). International Trade Analyzer [Computer software].
-https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer
+https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer
 ```
 
 ---

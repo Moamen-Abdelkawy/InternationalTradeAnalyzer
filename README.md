@@ -46,7 +46,7 @@ Every query produces a folder with an Excel workbook holding the full query data
 - **Professional Outputs**
   - Excel workbook: raw data, yearly and whole-period analysis, partner and product tables, data gaps, native Excel charts
   - Report-ready charts in one house style
-  - Word report and Markdown summary with automatically written key findings
+  - Word report with numbered sections and pages, and a Markdown summary, both with automatically written key findings
 
 - **Fast BACI Queries**
   - A one-time conversion of the BACI CSV files to Parquet makes each year load in a fraction of a second
@@ -57,7 +57,7 @@ Every query produces a folder with an Excel workbook holding the full query data
 
 ```bash
 # Clone the repository
-git clone https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer.git
+git clone https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer.git
 cd InternationalTradeAnalyzer
 
 # Install dependencies
@@ -108,34 +108,62 @@ InternationalTradeAnalyzer/
 ├── tests/                     # Tests: python -m unittest discover -s tests
 ├── requirements.txt           # Python dependencies
 ├── batch_example.csv          # Example queries for --batch
-├── SUBSCRIPTION_KEY.env       # API credentials (user-configured)
 ├── LICENSE                    # MIT License
 ├── README.md                  # This file
 ├── Usage_Guide.md             # Detailed setup and usage instructions
+├── docs/images/               # The sample charts shown below
 │
-├── comtradeapicall-main/      # UN COMTRADE API wrapper package
-│   └── src/comtradeapicall/   # API modules
+├── comtradeapicall-main/      # A trimmed copy of the COMTRADE API wrapper's source, for
+│   └── src/comtradeapicall/   # reference; the analyzer uses the comtradeapicall package
+│                              # that requirements.txt installs
 │
 ├── data/
-│   ├── BACI/                  # BACI database files (user-downloaded)
-│   │   └── BACI_HS92_V202601/ # Extracted BACI data (+ parquet/ cache, once built)
+│   ├── BACI/                  # BACI database files (you download them; see the Usage Guide)
 │   └── meta/                  # Reference data: country and product codes,
 │                              # US CPI table, HS edition table
 │
-└── output/                    # One folder per query
-    └── Egypt_imp_HS1001_2015-2024_BACI/
-        ├── Egypt_imp_HS1001_2015-2024_BACI.xlsx
-        ├── report.docx
-        ├── summary.md
-        └── charts/            # PNG charts
+└── output/                    # Your results: one folder per query (empty in the repository)
+```
+
+Two things are not in the repository and you add them yourself:
+
+- `SUBSCRIPTION_KEY.env` in the main folder, with your COMTRADE API key (only needed for COMTRADE queries)
+- `data/BACI/BACI_HS92_V202601/`, the BACI files you download and extract (only needed for BACI queries); the fast `parquet/` cache is built inside it if you ask for it
+
+Each query writes its results to its own folder in `output/`. For example, the first query of `batch_example.csv` writes:
+
+```
+output/Egypt_imp_HS1001_2015-2024_BACI/
+├── Egypt_imp_HS1001_2015-2024_BACI.xlsx   # The Excel workbook
+├── report.docx                             # The Word report
+├── summary.md                              # A one-page summary
+└── charts/                                 # The charts, as PNG images
 ```
 
 ---
 
 ## Sample Output
 
-### Bar Chart: Top Trading Partners
-![Sample chart](sample_graph.png)
+These charts come from `batch_example.csv`: Egypt's wheat imports from BACI, 2015–2024, and Egypt's cement exports from COMTRADE, 2021–2024.
+
+### Overview: the trend with the headline figures
+BACI leaves some quantities blank, so those years show as Missing rather than zero.
+
+![Overview of Egypt's wheat imports](docs/images/wheat_imports_overview.png)
+
+### The largest suppliers over the whole period
+![Egypt's largest wheat suppliers](docs/images/wheat_imports_suppliers.png)
+
+### Year by year, supplier by supplier
+![Egypt's wheat imports by supplier and year](docs/images/wheat_imports_by_year.png)
+
+### A focus on one partner
+![Russian Federation's part of Egypt's wheat imports](docs/images/wheat_imports_russia_focus.png)
+
+### COMTRADE: net weight in metric tons, value in million USD
+The footnote states which figures UN Comtrade estimated.
+
+![Overview of Egypt's cement exports](docs/images/cement_exports_overview.png)
 
 ### Workbook sheets
 
@@ -144,6 +172,7 @@ InternationalTradeAnalyzer/
 | About | The query, the source and the HS edition of its data, how missing data and the source's estimates are recognised, definitions, checks and a linked list of sheets |
 | Summary | Key figures, key findings, totals by year and the overview chart |
 | Yearly (or Monthly) | One row per period: totals, growth, unit value, number of partners, the largest partner, concentration, the share of each total the source estimated; growth over the whole period |
+| Annual totals | Monthly queries only: the totals of each complete calendar year |
 | Suppliers (or Markets) | Every partner over the whole query: totals, share, growth, CAGR, change in share and status |
 | ... by year, Shares by year, Growth by year | Partner by period tables |
 | Products, Products by year | The same by HS product, with each code's HS editions when the data spans more than one |
@@ -227,7 +256,7 @@ If you use this tool in your research, please consider citing it:
 
 ```
 Abdelkawy, M. (2026). International Trade Analyzer [Computer software].
-https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer
+https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer
 ```
 
 ---
