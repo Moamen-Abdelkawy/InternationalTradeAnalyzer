@@ -75,15 +75,21 @@ class Report(unittest.TestCase):
         self.assertIn("is an estimate by UN Comtrade", summary)
         self.assertIn("Quantity: estimated by UN Comtrade", summary)
 
-    def test_word_sections_start_on_new_pages_and_pages_are_numbered(self):
+    def test_word_main_sections_start_on_new_pages_and_pages_are_numbered(self):
+        from docx import Document
         outputs, _ = build(Path(tempfile.mkdtemp()))
+        breaks = {p.text.split(". ", 1)[1]: bool(p.paragraph_format.page_break_before)
+                  for p in Document(str(outputs.report)).paragraphs
+                  if p.style.name == "Heading 1"}
+        self.assertFalse(breaks["Summary"])
+        for title in ("Scope, data and method", "The trend", "Suppliers", "Year by year",
+                      "Data gaps and checks"):
+            self.assertTrue(breaks[title], title)
+        for title in ("Shares", "Growth", "Concentration", "Products", "Alpha"):
+            self.assertFalse(breaks[title], title)              # small: on the same page
         with zipfile.ZipFile(outputs.report) as report:
-            body = report.read("word/document.xml").decode()
             footers = "".join(report.read(name).decode() for name in report.namelist()
                               if name.startswith("word/footer"))
-        sections = len(re.findall(r'<w:pStyle w:val="Heading1"/>', body))
-        self.assertGreater(sections, 2)
-        self.assertEqual(body.count("<w:pageBreakBefore/>"), sections - 1)   # all but the first
         self.assertIn("PAGE", footers)
         self.assertIn("NUMPAGES", footers)
 

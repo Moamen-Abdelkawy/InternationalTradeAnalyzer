@@ -1,0 +1,8 @@
+source,freq,period,reporter,partner,product,flow,metric
+baci,A,2015-2024,Egypt,,1001,M,value
+baci,A,2015-2024,Egypt,Russian Federation,1001,M,value
+comtrade,A,2021-2024,Egypt,,2523,X,netweight
+comtrade,A,2021-2024,Egypt,,2515,X,value
+comtrade,A,2022-2024,Egypt,,0102,M,quantity
+comtrade,M,202401-202412,Egypt,,1001,M,value
+comtrade,A,2024,Egypt,,AG2,X,value

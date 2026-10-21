@@ -17,7 +17,7 @@ Usage
     python trade_analyzer.py --source baci --reporter Egypt --product 1001 --flow M --period 2015-2024
     python trade_analyzer.py --source comtrade --freq M --period 202401-202412 --reporter 818 \\
                              --product 1001 --flow M --partner "Russian Federation"
-    python trade_analyzer.py --batch queries.csv     one query per row of a CSV file
+    python trade_analyzer.py --batch batch_example.csv   one query per row of a CSV file
     python trade_analyzer.py --build-baci-cache      convert the BACI CSV files to Parquet, once
     python trade_analyzer.py --update-cpi            refresh the US CPI table used for constant dollars
 """

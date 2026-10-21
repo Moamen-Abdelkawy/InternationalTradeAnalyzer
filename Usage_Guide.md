@@ -364,16 +364,22 @@ Tips:
 
 ### Step 7.3: Run Many Queries at Once (Batch)
 
-1. Create a CSV file (for example `queries.csv`) with one query per row. The columns have the same names as the command-line options:
+The main folder has an example file, **`batch_example.csv`**, that you can run as it is or copy and edit:
 
-   ```
-   source,freq,period,reporter,partner,product,flow,metric
-   baci,A,2015-2024,Egypt,,1001,M,value
-   baci,A,2015-2024,Egypt,Russian Federation,1001,M,quantity
-   comtrade,M,202401-202412,818,,1001,M,netweight
-   comtrade,A,2019-2023,Kenya,,TOTAL,X,value
-   ```
+```
+source,freq,period,reporter,partner,product,flow,metric
+baci,A,2015-2024,Egypt,,1001,M,value
+baci,A,2015-2024,Egypt,Russian Federation,1001,M,value
+comtrade,A,2021-2024,Egypt,,2523,X,netweight
+comtrade,A,2021-2024,Egypt,,2515,X,value
+comtrade,A,2022-2024,Egypt,,0102,M,quantity
+comtrade,M,202401-202412,Egypt,,1001,M,value
+comtrade,A,2024,Egypt,,AG2,X,value
+```
 
+Its rows show each kind of query: BACI for all partners and with a focus on one partner (Russian Federation); COMTRADE annual data measured by net weight, by value, and by quantity for a product measured in one unit (live bovine animals, counted in items); monthly data; and all products by HS chapter (`AG2`).
+
+1. Create a CSV file with one query per row, or edit a copy of `batch_example.csv`. The columns have the same names as the command-line options:
    - Leave `partner` empty to analyze all partners without a focus.
    - Leave `freq` empty for annual data, and `metric` empty for value.
    - You can make the file in Excel and save it as **CSV UTF-8**. If Excel drops the leading zero of a product code (`0401` becomes `401`), the analyzer adds it back.
@@ -381,8 +387,10 @@ Tips:
 2. Run it:
 
    ```
-   python trade_analyzer.py --batch queries.csv
+   python trade_analyzer.py --batch batch_example.csv
    ```
+
+   (or the name of your own file).
 
 Each query gets its own output folder. A query that fails does not stop the others. At the end, the analyzer lists each query with ✓ (done) or ✗ (failed, with the reason).
 
@@ -702,7 +710,7 @@ A figure the source does not report is never drawn as zero: the charts label it 
 
 ### 9.7 The Word Report and the Summary
 
-- **`report.docx`** is a report you can edit and share: the key findings and figures, the scope and method, a numbered section for each chart with its table, and finally the data gaps, source estimates and checks.
+- **`report.docx`** is a report you can edit and share: the key findings and figures, the scope and method, a numbered section for each chart with its table, and finally the data gaps, source estimates and checks. The pages are numbered, and each main section starts on a new page; the small chart sections (shares, growth, concentration, products, the partner focus and seasonality) follow on the same page.
 - **`summary.md`** is a one-page summary in Markdown: key findings, key figures, the totals by period, the top partners and the list of files. It opens in any text editor and displays nicely on GitHub.
 
 ---
@@ -863,7 +871,7 @@ python trade_analyzer.py
 python trade_analyzer.py --source baci --reporter Egypt --product 1001 --flow M --period 2015-2024
 
 # Many queries from a CSV file
-python trade_analyzer.py --batch queries.csv
+python trade_analyzer.py --batch batch_example.csv
 
 # Once: convert BACI for fast queries
 python trade_analyzer.py --build-baci-cache
@@ -896,6 +904,7 @@ python trade_analyzer.py --update-cpi
 | US CPI Table | `data/meta/us_cpi_worldbank.csv` |
 | HS Edition Table | `data/meta/hs_editions.csv` |
 | API Credentials | `SUBSCRIPTION_KEY.env` |
+| Batch Example | `batch_example.csv` |
 | Results | `output/<query folder>/` |
 
 ---

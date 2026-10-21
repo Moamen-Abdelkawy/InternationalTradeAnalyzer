@@ -19,7 +19,7 @@ Every query produces a folder with an Excel workbook holding the full query data
 - **Three Ways to Run**
   - Interactive: a guided step-by-step workflow with input validation and fuzzy country-name suggestions
   - Command line: one query in one command, for scripts and repeatable work
-  - Batch: a CSV file with one query per row
+  - Batch: a CSV file with one query per row (`batch_example.csv` shows each kind of query)
 
 - **Flexible Analysis Options**
   - Analyze trade with all partners, optionally with a focus on one partner
@@ -68,6 +68,9 @@ python trade_analyzer.py
 
 # Or run one query from the command line
 python trade_analyzer.py --source baci --reporter Egypt --product 1001 --flow M --period 2015-2024
+
+# Or run every query of a CSV file
+python trade_analyzer.py --batch batch_example.csv
 ```
 
 > **Note**: You'll need to download the BACI database and obtain a COMTRADE API key before using the tool. See the [Usage Guide](Usage_Guide.md) for detailed setup instructions.
@@ -104,6 +107,7 @@ InternationalTradeAnalyzer/
 ├── trade_report/              # Analysis, charts, workbook, Word report and summary
 ├── tests/                     # Tests: python -m unittest discover -s tests
 ├── requirements.txt           # Python dependencies
+├── batch_example.csv          # Example queries for --batch
 ├── SUBSCRIPTION_KEY.env       # API credentials (user-configured)
 ├── LICENSE                    # MIT License
 ├── README.md                  # This file

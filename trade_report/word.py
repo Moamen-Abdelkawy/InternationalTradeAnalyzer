@@ -78,11 +78,12 @@ class Report:
             run.font.color.rgb = GREY
 
     # -- building blocks ---------------------------------------------------------------
-    def heading(self, text):
-        """A numbered section; every section after the first starts on a new page."""
+    def heading(self, text, new_page=True):
+        """A numbered section; a main section after the first starts on a new page, while a
+        small chart section follows on the same page."""
         self.number += 1
         heading = self.doc.add_heading(f"{self.number}. {text}", level=1)
-        heading.paragraph_format.page_break_before = self.number > 1
+        heading.paragraph_format.page_break_before = new_page and self.number > 1
 
     def paragraph(self, text, italic=False, size=None, colour=None):
         para = self.doc.add_paragraph()
@@ -199,7 +200,7 @@ class Report:
             self.top_table(a.partners, q.role.capitalize())
         self.chart_section("03_partners_by_period",
                            f"{a.period_word.capitalize()} by {a.period_word}",
-                           f"{m.label} by {q.role} and {a.period_word}.")
+                           f"{m.label} by {q.role} and {a.period_word}.", new_page=True)
         self.chart_section("04_shares", "Shares", f"Share of the {m.label.lower()} by {q.role}.")
         self.chart_section("05_growth", "Growth", "Compound annual growth and change in share.")
         self.chart_section("06_concentration", "Concentration",
@@ -224,10 +225,10 @@ class Report:
         self.doc.save(str(path))
         return path
 
-    def chart_section(self, stem, title, caption) -> bool:
+    def chart_section(self, stem, title, caption, new_page=False) -> bool:
         if not self.charts.get(stem):
             return False
-        self.heading(title)
+        self.heading(title, new_page)
         return self.chart(stem, caption)
 
     def period_table(self):
