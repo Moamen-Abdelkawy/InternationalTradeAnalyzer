@@ -1,6 +1,6 @@
 # International Trade Analyzer
 
-A comprehensive Python tool for analyzing international bilateral trade flows using two complementary data sources: the **BACI database** and the **UN COMTRADE API**.
+A Python tool for analyzing international bilateral trade flows using two complementary data sources: the **BACI database** and the **UN COMTRADE API**.
 
 ---
 
@@ -8,36 +8,48 @@ A comprehensive Python tool for analyzing international bilateral trade flows us
 
 The International Trade Analyzer enables researchers, economists, policy analysts, and trade professionals to explore and visualize global trade patterns with ease. Whether you're investigating a country's top trading partners for a specific commodity or analyzing trade trends over three decades, this tool provides the flexibility and depth needed for robust trade analysis.
 
+Every query produces a folder with an Excel workbook holding the full query data and its analysis, report-ready charts, a Word report and a Markdown summary.
+
 ### Key Features
 
 - **Dual Data Source Support**
   - **BACI Database**: Harmonized bilateral trade data from 1995-2024 (annual), where discrepancies between exporter and importer reports are reconciled
-  - **UN COMTRADE API**: Real-time trade data from 1962-present with annual and monthly frequency options
+  - **UN COMTRADE API**: Trade data from 1962-present with annual and monthly frequency options, as reported by countries
 
-- **Interactive Command-Line Interface**
-  - Guided step-by-step analysis workflow
-  - Input validation with helpful error messages
-  - Fuzzy matching for country name suggestions (handles typos like "Columbia" -> "Colombia")
+- **Three Ways to Run**
+  - Interactive: a guided step-by-step workflow with input validation and fuzzy country-name suggestions
+  - Command line: one query in one command, for scripts and repeatable work
+  - Batch: a CSV file with one query per row
 
 - **Flexible Analysis Options**
-  - Analyze trade with all partners or focus on a specific bilateral relationship
-  - Support for HS (Harmonized System) product codes at 2-digit, 4-digit, and 6-digit levels
-  - Automatic aggregation of product subcategories
+  - Analyze trade with all partners, optionally with a focus on one partner
+  - HS (Harmonized System) product codes at 2-digit, 4-digit, and 6-digit levels, or `TOTAL`, `AG2`, `AG4`, `AG6`
+  - Product detail down to HS 6-digit products from both sources
 
-- **Multiple Metrics**
-  - Trade Value (USD)
-  - Quantity (Metric Tons for BACI)
-  - Additional COMTRADE metrics: FOB Value, CIF Value, Net Weight, Gross Weight
+- **Analysis by Period and for the Whole Period**
+  - Totals, shares and rankings by year (or month) and over the whole query
+  - Year-on-year growth, CAGR and trend growth; constant-dollar values deflated by the US CPI
+  - Concentration (HHI), new and lost partners, unit values
 
-- **Professional Visualizations**
-  - Bar charts for top trading partners
-  - Stacked bar charts showing partner share over time
-  - Subcategory breakdown charts
+- **The Databases As They Are: Nothing Estimated**
+  - Every figure comes from the records the database gives for it. COMTRADE's totals are its own figures for the code you ask for with partner World, the same as on the COMTRADE website; partner and product figures are its own records for them. Figures are added up from a lower level only where COMTRADE leaves its own figure empty, and the report says so
+  - A value the source does not report is shown as **Missing**, and so is every total, share or growth rate that depends on it
+  - A Data gaps sheet lists every missing data point, so you can decide where to get it
+  - Figures the database itself estimated (COMTRADE flags some weights and quantities as UN Comtrade estimates) are used as the database gives them and clearly marked: in blue in the workbook, in a Source estimates sheet, and in the findings and chart notes
+  - HS editions stated: BACI uses HS 1992 codes for every year, while COMTRADE keeps each country's data in the HS edition it reported in. The product list shows which editions each code exists in, and the workbook says when a query's data spans more than one edition
 
-- **Comprehensive Data Export**
-  - CSV files with all available metrics (sorted by selected metric)
-  - Detailed text summaries
-  - Year-by-year partner analysis with market share calculations
+- **One Set of Units for Both Databases**
+  - Money in million USD, weights in metric tons, unit values in USD per metric ton, in every table, chart and report
+  - Quantity stays as the database gives it: metric tons in BACI, and in COMTRADE the product's own unit (kg, number of items, litres...). Quantities in different units are never added: when a query's products use more than one unit, the program refuses quantity, shows which products share a unit, and points to value or net weight
+  - The Raw data sheet keeps each database's own units: thousand USD and metric tons for BACI, USD and kg for COMTRADE
+
+- **Professional Outputs**
+  - Excel workbook: raw data, yearly and whole-period analysis, partner and product tables, data gaps, native Excel charts
+  - Report-ready charts in one house style
+  - Word report and Markdown summary with automatically written key findings
+
+- **Fast BACI Queries**
+  - A one-time conversion of the BACI CSV files to Parquet makes each year load in a fraction of a second
 
 ---
 
@@ -51,8 +63,11 @@ cd InternationalTradeAnalyzer
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the analyzer
+# Run the analyzer (interactive)
 python trade_analyzer.py
+
+# Or run one query from the command line
+python trade_analyzer.py --source baci --reporter Egypt --product 1001 --flow M --period 2015-2024
 ```
 
 > **Note**: You'll need to download the BACI database and obtain a COMTRADE API key before using the tool. See the [Usage Guide](Usage_Guide.md) for detailed setup instructions.
@@ -66,8 +81,8 @@ python trade_analyzer.py
 BACI (Base pour l'Analyse du Commerce International) provides reconciled bilateral trade data where discrepancies between exporter-reported and importer-reported values have been harmonized using a sophisticated algorithm.
 
 - **Coverage**: 1995-2024 (annual data)
-- **Classification**: HS92 (Harmonized System 1992)
-- **Metrics**: Trade Value (USD), Quantity (Metric Tons)
+- **Classification**: HS92 (Harmonized System 1992); CEPII converts every year to this edition
+- **Metrics**: Trade Value (thousand USD in BACI), Quantity (Metric Tons)
 - **Source**: [CEPII BACI Database](https://www.cepii.fr/DATA_DOWNLOAD/baci/doc/baci_webpage.html)
 
 ### UN COMTRADE API
@@ -75,7 +90,7 @@ BACI (Base pour l'Analyse du Commerce International) provides reconciled bilater
 The United Nations COMTRADE database is the largest repository of international trade statistics, providing data as reported by individual countries.
 
 - **Coverage**: 1962-present (annual and monthly data)
-- **Classification**: HS (Harmonized System)
+- **Classification**: HS (Harmonized System), in the edition each reporter used each year (HS 1992 to HS 2022)
 - **Metrics**: Primary Value, FOB Value, CIF Value, Quantity, Net Weight, Gross Weight
 - **Source**: [UN COMTRADE](https://comtradeplus.un.org/)
 
@@ -85,7 +100,9 @@ The United Nations COMTRADE database is the largest repository of international 
 
 ```
 InternationalTradeAnalyzer/
-├── trade_analyzer.py          # Main analysis script
+├── trade_analyzer.py          # Questions, command line and data loading (BACI, COMTRADE)
+├── trade_report/              # Analysis, charts, workbook, Word report and summary
+├── tests/                     # Tests: python -m unittest discover -s tests
 ├── requirements.txt           # Python dependencies
 ├── SUBSCRIPTION_KEY.env       # API credentials (user-configured)
 ├── LICENSE                    # MIT License
@@ -97,13 +114,16 @@ InternationalTradeAnalyzer/
 │
 ├── data/
 │   ├── BACI/                  # BACI database files (user-downloaded)
-│   │   └── BACI_HS92_V202601/ # Extracted BACI data
-│   └── meta/                  # Reference data (country/product codes)
+│   │   └── BACI_HS92_V202601/ # Extracted BACI data (+ parquet/ cache, once built)
+│   └── meta/                  # Reference data: country and product codes,
+│                              # US CPI table, HS edition table
 │
-├── output/                    # Generated analysis results
-    ├── *.csv                  # Data exports
-    ├── *.txt                  # Summary reports
-    └── *.png                  # Visualizations
+└── output/                    # One folder per query
+    └── Egypt_imp_HS1001_2015-2024_BACI/
+        ├── Egypt_imp_HS1001_2015-2024_BACI.xlsx
+        ├── report.docx
+        ├── summary.md
+        └── charts/            # PNG charts
 ```
 
 ---
@@ -111,29 +131,34 @@ InternationalTradeAnalyzer/
 ## Sample Output
 
 ### Bar Chart: Top Trading Partners
-![Sample Bar Chart](sample_graph.png)
+![Sample chart](sample_graph.png)
 
-### CSV Export Structure
+### Workbook sheets
 
-| Partner_Code | Partner_Name               | Trade_Value_USD       | Quantity_MT   |
-| ------------ | -------------------------- | --------------------- | ------------- |
-| 643          | Russian Federation         | $   14,904,222,968.00 | 31,026,962.26 |
-| 804          | Ukraine                    | $   4,012,874,484.00  | 13,871,947.96 |
-| 642          | Romania                    | $   3,396,469,970.00  | 8,979,856.75  |
-| ...          | ...                        | ...                   | ...           |
-| 0            | World (TOTAL - calculated) | $   26,252,394,275.00 | 63,277,724.83 |
+| Sheet | Contents |
+| --- | --- |
+| About | The query, the source and the HS edition of its data, how missing data and the source's estimates are recognised, definitions, checks and a linked list of sheets |
+| Summary | Key figures, key findings, totals by year and the overview chart |
+| Yearly (or Monthly) | One row per period: totals, growth, unit value, number of partners, the largest partner, concentration, the share of each total the source estimated; growth over the whole period |
+| Suppliers (or Markets) | Every partner over the whole query: totals, share, growth, CAGR, change in share and status |
+| ... by year, Shares by year, Growth by year | Partner by period tables |
+| Products, Products by year | The same by HS product, with each code's HS editions when the data spans more than one |
+| Partner focus, Partner products | When a partner is chosen |
+| Data gaps | Every data point the source does not report |
+| Source estimates | Every figure the database itself marks as an estimate (COMTRADE), used as given |
+| Raw data | Every record of the query, exactly as the source delivers it (for COMTRADE, including its partner World totals), as an Excel table |
+| Charts | Every chart |
 
 ---
 
 ## Requirements
 
-- Python 3.7 or higher
-- Required packages (see `requirements.txt`):
-  - pandas
-  - matplotlib
-  - seaborn
-  - python-dotenv
-  - comtradeapicall
+- Python 3.11 to 3.14 (the pinned packages are not yet available for newer versions)
+- The packages in `requirements.txt`, installed with `pip install -r requirements.txt`:
+  - pandas, numpy, matplotlib
+  - pyarrow (fast BACI reading and the Parquet cache)
+  - XlsxWriter (workbook), python-docx (Word report)
+  - python-dotenv (API credentials), comtradeapicall (COMTRADE API)
 
 ---
 
@@ -143,7 +168,8 @@ For detailed setup instructions, including:
 - Downloading and installing Python
 - Cloning the repository
 - Obtaining and configuring data sources
-- Step-by-step usage guide
+- Step-by-step usage guide, command-line and batch use
+- What each output contains
 
 Please see the **[Usage Guide](Usage_Guide.md)**.
 
@@ -186,6 +212,7 @@ Contributions, suggestions, and bug reports are welcome! Please feel free to:
 
 - **CEPII** for the BACI database
 - **United Nations Statistics Division** for the COMTRADE database and API
+- **The World Bank** for the consumer price index series
 - The open-source Python community for the excellent libraries that make this project possible
 
 ---
@@ -201,4 +228,4 @@ https://github.com/MoamenAbdelkawy/InternationalTradeAnalyzer
 
 ---
 
-*Last updated: February 2026*
+*Last updated: October 2026*
