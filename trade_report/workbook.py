@@ -10,7 +10,6 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 import xlsxwriter
-from xlsxwriter.utility import xl_rowcol_to_cell
 
 from . import fmt
 from .analysis import TOP_N, Analysis, cagr, growth, hhi_band, is_gap, number, ratio, total_of
@@ -334,10 +333,9 @@ class Book:
                           f"{q.product_level}.")
         self.matrix_sheet(f"Products by {word}", a.product_matrix[a.metric.key], "value",
                           "Product", a.metric, f"{a.metric.label} by product and {word}.")
-        if a.focus is not None:
-            self.focus_sheets()
         self.gaps_sheet()
         self.estimates_sheet()
+        self.comtrade_check_sheet()
         self.raw_sheet()
         self.charts_sheet()
         self.summary_sheet(summary)
@@ -452,7 +450,7 @@ class Book:
 
     def annual_sheet(self):
         """Monthly queries: calendar-year totals, for years whose twelve months are known."""
-        a, q = self.a, self.q
+        a = self.a
         ws = self.sheet("Annual totals", SKY, "Calendar-year totals, only for years whose "
                                               "twelve months are all in the query and reported.")
         years = sorted({p // 100 for p in a.periods})
@@ -570,49 +568,8 @@ class Book:
         annual = self.a._annual_row(row)
         return cagr(annual[self.a.years[0]], annual[self.a.years[-1]], self.a.span_years)
 
-    def focus_sheets(self):
-        a, q = self.a, self.q
-        code = q.partner_code
-        name = a.partner_names[code]
-        ws = self.sheet("Partner focus", ACCENT, f"{name} by {a.period_word}: value, share, "
-                                                 f"rank and growth against all {q.roles}.")
-        frame = a.focus
-        columns = []
-        for header in frame.columns:
-            values = frame[header].tolist()
-            if header == "Period":
-                columns.append(Column("Month" if q.monthly else "Year", values, self.period_kind,
-                                      10))
-            elif header == "Rank":
-                columns.append(Column("Rank", values, "int", 7))
-            elif header == "Share":
-                columns.append(Column("Share", values, "share"))
-            elif header.endswith("growth"):
-                columns.append(Column(header, values, "growth"))
-            elif header == "Growth gap (pp)":
-                columns.append(Column(header, values, "pp"))
-            elif header.endswith("unit value"):
-                columns.append(Column(self.entity_header("Unit value").replace(
-                    "Unit value", header), values, "unit_value"))
-            else:
-                metric = next((m for m in a.metrics if header.endswith(m.heading)), a.metric)
-                e = a.estimated.get(metric.key)
-                marks = None
-                if e is not None:
-                    cells = e.cells("Partner_Code")
-                    marks = ([(code, p) in cells for p in frame["Period"]]
-                             if header.startswith(f"{name}: ") else
-                             [p in e.periods for p in frame["Period"]])
-                columns.append(Column(header, values, self.metric_kind(metric), marks=marks))
-        last = self.table(ws, columns)
-        self.estimate_note(ws, last + 2)
-        ws = self.sheet("Partner products", ACCENT, f"The products traded with {name}.")
-        last = self.table(ws, self.entity_columns(a.focus_products, "Product", partner=code),
-                          data_bar=a.metric.heading if len(a.focus_products) else None)
-        self.edition_note(ws, self.estimate_note(ws, last + 2))
-
     def gaps_sheet(self):
-        a, q = self.a, self.q
+        a = self.a
         gaps = self.data.gaps.copy()
         period_rows = [{"Period": p, "Partner": "All", "HS code": "All", "Product": "All",
                         "Metric": "All", "Reason": reason}
@@ -670,13 +627,41 @@ class Book:
                                   {"Product": 50, "Partner": 26, "Source flag": 20}.get(header)))
         self.table(ws, columns)
 
-    def raw_sheet(self):
-        a, q = self.a, self.q
+    def comtrade_check_sheet(self):
+        """BACI queries: each year's BACI total beside the reporter's own COMTRADE figure, as a
+        check that no figure of the report uses."""
+        check = self.data.comtrade_check
+        if check is None or check.empty:
+            return
+        ws = self.sheet("COMTRADE check", GREY,
+                        "BACI's total for each year beside the reporter's own report to COMTRADE "
+                        "for the same code and flow, as a check of BACI; no figure of the report "
+                        "uses the COMTRADE figures (Usage Guide, section 9.9).")
+        kinds = {"Year": "year", "BACI / COMTRADE": "unit_value"}
+        columns = [Column(header, check[header].tolist(),
+                          kinds.get(header, "money" if "USD" in header else "text"),
+                          {"Flow": 40, "Note": 60}.get(header))
+                   for header in check.columns]
+        last = self.table(ws, columns)
+        notes = ["BACI combines both countries' reports of each flow, product by product; the "
+                 "COMTRADE figure is the reporter's own record for the code asked for, with "
+                 "partner World or the partner. Where BACI's figure is well above the reporter's "
+                 "own, look at BACI's 6-digit rows (Products sheet) for sibling codes that each "
+                 "carry the trade: the Usage Guide, section 9.9, explains why BACI can count "
+                 "such trade twice.",
+                 "n/a: not defined, because COMTRADE's figure is 0 (no record)."]
+        for i, note in enumerate(notes):
+            ws.write_string(last + 2 + i, 0, note, self.f["note"])
+
+    def raw_sheet(self, name="Raw data", table="RawData", file="raw_data.csv",
+                  guide="The query at full detail as the source delivers it; values the source "
+                        "does not report say Missing."):
+        """The source rows of self.data, in a sheet (an Excel table) or, when they are too many,
+        in a CSV file next to the workbook."""
         raw = self.data.raw
-        ws = self.sheet("Raw data", GREY, "The query at full detail as the source delivers it; "
-                                          "values the source does not report say Missing.")
+        ws = self.sheet(name, GREY, guide)
         if len(raw) > SHEET_ROW_LIMIT:
-            path = self.path.parent / "raw_data.csv"
+            path = self.path.parent / file
             out = raw.copy()
             for column in self.data.raw_metrics:
                 out[column] = out[column].astype(object).where(out[column].notna(), "Missing")
@@ -684,7 +669,7 @@ class Book:
             ws.write_string(0, 0, f"The query returned {len(raw):,} rows, more than one sheet "
                                   f"holds ({SHEET_ROW_LIMIT:,} here). Every row is in "
                                   f"{path.name} next to this workbook.", self.f["note"])
-            self.files["Raw data"] = path.name
+            self.files[name] = path.name
             return
         headers = [str(c) for c in raw.columns]
         metrics = set(self.data.raw_metrics)
@@ -700,7 +685,7 @@ class Book:
                 kinds.append("text")
         ws.add_table(0, 0, max(len(raw), 1), len(headers) - 1, {
             "columns": [{"header": h, "header_format": self.f["header"]} for h in headers],
-            "style": "Table Style Light 1", "name": "RawData", "autofilter": True})
+            "style": "Table Style Light 1", "name": table, "autofilter": True})
         ws.set_row(0, 32)
         for i, record in enumerate(raw.itertuples(index=False), start=1):
             for j, value in enumerate(record):
@@ -825,9 +810,7 @@ class Book:
             ws.set_column(col, col, width)
         ws.write_string(0, 0, f"{q.reporter_name} · {q.flow} · {q.product_label} · {q.span}",
                         self.f["title"])
-        focus = f" · focus on {a.partner_names.get(q.partner_code)}" if a.focus is not None \
-            else ""
-        ws.write_string(1, 0, f"{q.source} · all {q.roles}{focus}", self.f["subtitle"])
+        ws.write_string(1, 0, f"{q.source} · all {q.roles}", self.f["subtitle"])
 
         def section(row, title):
             for col in range(len(widths)):
@@ -936,8 +919,7 @@ class Book:
         item("Trade flow", f"{q.flow}; partners are {q.roles}")
         item("Product", f"{q.product_label}; one product row is one {q.product_level}; "
                         f"{a.summary['products']} in the data")
-        item("Partners", f"All {q.roles}" + (f"; focus on {a.partner_names[q.partner_code]}"
-                                             if a.focus is not None else ""))
+        item("Partners", f"All {q.roles}")
         item("Period", f"{q.span}, {len(a.periods)} {a.period_word}s"
                        + (", monthly" if q.monthly else ", annual"))
         item("HS edition", edition_summary(a))

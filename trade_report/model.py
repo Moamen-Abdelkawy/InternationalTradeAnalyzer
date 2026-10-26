@@ -108,6 +108,20 @@ class QueryData:
     partner_rows: pd.DataFrame | None = None
     total_rows: pd.DataFrame | None = None
     product_total_rows: pd.DataFrame | None = None
+    partner_views: PartnerViews | None = None   # a partner query's other views of the trade
+    # BACI queries: BACI's totals beside the reporter's own COMTRADE totals, as a check that
+    # no figure of the report uses
+    comtrade_check: pd.DataFrame | None = None
+
+
+@dataclass
+class PartnerViews:
+    """A partner query's two other views of the trade between the two countries, each a query
+    of its own with the data it returned: `side` is the partner's trade with every country in
+    the other direction (when the reporter imports, the partner's exports), from the partner's
+    own reports in COMTRADE; `other` is the reporter's trade with the partner the other way."""
+    side: tuple[Query, QueryData] | None = None
+    other: tuple[Query, QueryData] | None = None
 
 
 ROW_COLUMNS = ["Period", "Partner_Code", "Partner_Name", "Partner_ISO3",

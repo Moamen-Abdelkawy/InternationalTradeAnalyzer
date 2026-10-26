@@ -58,12 +58,11 @@ PHRASES = {
     "note_latest": "Showing the latest {n} {periods}; every {period} is in the workbook.",
     "partners_title": "{name} was the largest {role}, with {share} of the total",
     "partners_title_plain": "{roles} by {metric}",
-    "partners_sub": "{metric} by {role}, {span} total, top {n} of {total}{focus}",
+    "partners_sub": "{metric} by {role}, {span} total, top {n} of {total}",
     "partners_sub_order": "{metric} by {role}, {span} total; the {n} largest by {order} of "
-                          "{total}{focus}",
+                          "{total}",
     "partners_order_note": "Listed by {order}, not ranked: {metric} is missing for some "
                            "{roles}, so their order by {metric} cannot be known.",
-    "partners_focus": "; {name} in orange",
     "partners_other": "Other {n} {roles}",
     "partners_note": "CAGR compares {first} with {last}.",
     "partners_excluded": "Not ranked, because {metric} is missing: {names}.",
@@ -99,12 +98,6 @@ PHRASES = {
     "products_title_plain": "{metric} by product",
     "products_sub": "{metric} by {level} and {period}; {n} in the data",
     "other_products": "Other products",
-    "focus_title": "{name}: {first} of {reporter}'s {flow} in {p0}, {last} in {p1}",
-    "focus_sub": "{name} against all other {roles}, {metric} by {period}",
-    "focus_main": "{metric} by {period}; share and rank above each bar",
-    "focus_growth": "Change on the previous {period}",
-    "focus_others": "All other {roles}",
-    "focus_all": "All {roles}",
     "season_title": "Month by month, {y0}–{y1}",
     "season_sub": "{metric} by month; rows are years",
     "season_note": "Blank = month outside the query; Missing = not reported by the source.",
@@ -470,7 +463,6 @@ class Charts:
             table = table[table[m.heading].map(number) > 0]
         if table.empty:
             return
-        focus = self.q.partner_code
         top = table.head(TOP_N)
         rest = table.iloc[TOP_N:]
         if all(is_gap(v) for v in top[m.heading]):
@@ -486,7 +478,7 @@ class Charts:
                     if not is_gap(growth) and growth == growth else w.status(row["Status"]))
             labels.append(w.gap(value) if is_gap(value) else
                           f"{w.figure(value, m)}  |  {w.pct(row['Share'])}  |  {tail}")
-            colours.append(ACCENT if row["Code"] == focus else NAVY)
+            colours.append(NAVY)
         if len(rest):
             rest_total = total_of(rest[m.heading])
             names.append(w("partners_other", n=len(rest), roles=w.role(True)))
@@ -517,8 +509,6 @@ class Charts:
         else:
             title = w("partners_title_plain", roles=w.role(True).capitalize(),
                       metric=w.metric(m))
-        focus_text = (w("partners_focus", name=w.partner(focus))
-                      if focus is not None and focus in a.partner_names else "")
         notes = []
         if len(a.years) >= 2:
             notes.append(w("partners_note", first=a.years[0], last=a.years[-1]))
@@ -526,11 +516,10 @@ class Charts:
             notes.append(w("partners_order_note", order=w.metric(a.partner_order),
                            metric=w.metric(m), roles=w.role(True)))
             subtitle = w("partners_sub_order", metric=w.metric_title(m), role=w.role(), span=self.span,
-                         n=len(top), order=w.metric(a.partner_order), total=len(a.partners),
-                         focus=focus_text)
+                         n=len(top), order=w.metric(a.partner_order), total=len(a.partners))
         else:
             subtitle = w("partners_sub", metric=w.metric_title(m), role=w.role(), span=self.span,
-                         n=len(top), total=len(a.partners), focus=focus_text)
+                         n=len(top), total=len(a.partners))
         self.save(fig, "02_partners.png", title, subtitle, "\n".join(notes))
 
     # -- 3 ------------------------------------------------------------------------------
@@ -812,64 +801,6 @@ class Charts:
                   w("note_latest", n=len(self.shown), periods=w.period_word(True),
                     period=w.period_word()) if self.cut else "")
 
-    # -- 8 ------------------------------------------------------------------------------
-    def focus(self):
-        a, w, m = self.a, self.w, self.m
-        f = a.focus
-        if f is None:
-            return
-        f = f.set_index("Period").loc[self.shown]
-        code = self.q.partner_code
-        name = w.partner(code)
-        mine_col = f"{a.partner_names[code]}: {m.heading}"
-        all_col = f"All {self.q.roles}: {m.heading}"
-        xs = np.arange(len(self.shown))
-        fig, (a1, a2) = plt.subplots(1, 2, figsize=(14.5, 6.2),
-                                     gridspec_kw={"width_ratios": [1.6, 1]})
-        mine = numbers_of(f[mine_col])
-        world = numbers_of(f[all_col])
-        rest = world - mine
-        a1.bar(xs, np.nan_to_num(mine), 0.7, color=ACCENT, label=name)
-        a1.bar(xs, np.nan_to_num(rest), 0.7, bottom=np.nan_to_num(mine), color=LIGHT_GREY,
-               label=w("focus_others", roles=w.role(True)))
-        top = np.nanmax(world) if np.any(world > 0) else 1
-        if len(xs) <= LABEL_LIMIT:
-            for x, total, share, rank in zip(xs, world, f["Share"], f["Rank"]):
-                if total == total and not is_gap(share):
-                    rank = number(rank)
-                    label = w.pct(share, 0) + (f"\n{w('rank', n=int(rank))}"
-                                               if rank == rank else "")
-                    a1.text(x, total + top * 0.02, label, ha="center", va="bottom",
-                            fontsize=8.5)
-        mark_gaps(a1, xs, f[all_col].tolist(), top, w, rotate=True)
-        a1.set_ylim(0, top * 1.22)
-        self.period_axis(a1, self.shown, 8.5)
-        axis_amount(a1.yaxis, top)
-        a1.legend(loc="upper left", ncol=2)
-        a1.set_title(w("focus_main", metric=w.metric_title(m), period=w.period_word()))
-        y_grid(a1)
-        width = 0.38
-        g_mine = numbers_of(f[f"{a.partner_names[code]}: growth"])[1:]
-        g_all = numbers_of(f[f"All {self.q.roles}: growth"])[1:]
-        x2 = np.arange(len(g_mine))
-        a2.bar(x2 - width / 2, np.nan_to_num(g_mine), width, color=ACCENT,
-               label=fmt.short(name, 22))
-        a2.bar(x2 + width / 2, np.nan_to_num(g_all), width, color=GREY,
-               label=w("focus_all", roles=w.role(True)))
-        a2.axhline(0, color="#555555", linewidth=1)
-        self.period_axis(a2, self.shown[1:], 8.5)
-        a2.yaxis.set_major_formatter(FuncFormatter(lambda v, _: fmt.pct(v, 0)))
-        a2.legend(loc="upper right", fontsize=8.5)
-        a2.set_title(w("focus_growth", period=w.period_word()))
-        y_grid(a2)
-        first, last = f["Share"].iloc[0], f["Share"].iloc[-1]
-        self.save(fig, "08_partner_focus.png",
-                  w("focus_title", name=name, first=w.pct(first, 0), last=w.pct(last, 0),
-                    reporter=w.reporter(), flow=w.flow(), p0=w.period(self.shown[0]),
-                    p1=w.period(self.shown[-1])),
-                  w("focus_sub", name=name, roles=w.role(True), metric=w.metric(m),
-                    period=w.period_word()))
-
     # -- 9 ------------------------------------------------------------------------------
     def seasonality(self):
         a, w, m = self.a, self.w, self.m
@@ -892,7 +823,7 @@ class Charts:
 
     def make_all(self) -> list[Path]:
         steps = [self.overview, self.partners, self.by_period, self.shares, self.growth,
-                 self.concentration, self.products, self.focus, self.seasonality]
+                 self.concentration, self.products, self.seasonality]
         for step in steps:
             try:
                 step()

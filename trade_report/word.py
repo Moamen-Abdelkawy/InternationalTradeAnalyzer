@@ -99,7 +99,8 @@ class Report:
         for item in items:
             self.doc.add_paragraph(item, style="List Bullet")
 
-    def table(self, headers, rows, numeric):
+    def table(self, headers, rows, numeric, bold_rows=None):
+        """A table under the house header; rows whose index is in bold_rows are in bold."""
         table = self.doc.add_table(rows=1, cols=len(headers))
         table.style = "Table Grid"
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -111,13 +112,15 @@ class Report:
             run.font.size = Pt(8.5)
             run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
             _shade(cell_, "1F4E79")
-        for row in rows:
+        for i, row in enumerate(rows):
             cells = table.add_row().cells
             for j, value in enumerate(row):
                 cells[j].text = ""
                 para = cells[j].paragraphs[0]
                 run = para.add_run(str(value))
                 run.font.size = Pt(8.5)
+                if bold_rows and i in bold_rows:
+                    run.bold = True
                 if value in ("Missing", "Mixed units"):
                     run.italic = True
                     run.font.color.rgb = RGBColor(0xC5, 0x5A, 0x11)
@@ -207,10 +210,6 @@ class Report:
                            f"HHI and the share of the largest {q.roles}.")
         if self.chart_section("07_products", "Products", f"{m.label} by product."):
             self.top_table(a.products, "Product")
-        if a.focus is not None and self.chart_section(
-                "08_partner_focus", a.partner_names[q.partner_code],
-                f"{a.partner_names[q.partner_code]} against all other {q.roles}."):
-            self.focus_table()
         self.chart_section("09_seasonality", "Seasonality", f"{m.label} by month and year.")
 
         estimates = estimate_sentences(a)
@@ -265,20 +264,6 @@ class Report:
                 for r in top.to_dict("records")]
         self.table(["Rank", label, m.heading, "Share", "CAGR"], rows,
                    [True, False, True, True, True])
-
-    def focus_table(self):
-        a, q = self.a, self.q
-        f = a.focus
-        if len(f) > 24:
-            return
-        name = a.partner_names[q.partner_code]
-        mine = f"{name}: {a.metric.heading}"
-        rows = [[period_label(r["Period"], q.monthly, short=True),
-                 cell(r[mine], kind_of(a.metric), a.metric), cell(r["Share"], "share"),
-                 str(r["Rank"]), fmt.pct(r[f"{name}: growth"], 1, signed=True)]
-                for r in f.to_dict("records")]
-        self.table(["Month" if q.monthly else "Year", a.metric.heading, "Share", "Rank",
-                    "Growth"], rows, [False, True, True, True, True])
 
 
 def write_report(a: Analysis, charts: list[Path], path: Path, files: dict[str, str]) -> Path:

@@ -92,6 +92,66 @@ class Baci(unittest.TestCase):
             loaded = self.an.load_baci(spec)
         self.assertIn(2022, loaded.missing_periods)
 
+    def test_no_record_at_all_gives_no_report_and_says_why(self):
+        # 2022 has no file, and the 2023 file has no milk powder (0402)
+        reason = f"2022: the BACI file for 2022 is not in {self.folder.name}"
+        for periods, expected in (
+                ([2022], f"no data for any period of the query ({reason})"),
+                ([2022, 2023], "no trade recorded in the periods the source reports, and no data "
+                               f"for the others ({reason})")):
+            spec = ta.Spec("BACI", "A", periods, 818, "Egypt", 818, "0402", "x", "M")
+            printed = io.StringIO()
+            with contextlib.redirect_stdout(printed):
+                self.assertIsNone(self.an.run_spec(spec, Path(tempfile.mkdtemp())))
+            self.assertIn(f"Analysis cancelled: {expected}", printed.getvalue())
+
+    def test_check_against_comtrade_without_a_key_says_so(self):
+        self.an.base_dir, self.an._subscription_key = self.folder, None
+        spec = ta.Spec("BACI", "A", [2023], 818, "Egypt", 818, "0401", "x", "M")
+        loaded = self.load("0401")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.an.check_against_comtrade(spec, loaded)
+        self.assertIsNone(loaded.comtrade_check)
+        self.assertIn("Not made: there is no COMTRADE API key", dict(loaded.checks)[
+            "BACI against COMTRADE"])
+
+    def test_check_against_comtrade(self):
+        # BACI: milk (0401) into Egypt from Russia 10.5 and from Türkiye 4.0 thousand USD.
+        # COMTRADE, Egypt's own report: 10,000 USD from the World and 7,000 from Russia in 2023;
+        # 2022 not reported
+        self.an._subscription_key = "test key"
+        answer = pd.DataFrame({"period": ["2023", "2023"], "partnerCode": [0, 643],
+                               "primaryValue": [10000.0, 7000.0], "partner2Code": [0, 0],
+                               "motCode": [0, 0], "customsCode": ["C00", "C00"]})
+        spec = ta.Spec("BACI", "A", [2022, 2023], 818, "Egypt", 818, "0401", "x", "M", 643,
+                       "Russian Federation", 643)
+        with contextlib.redirect_stdout(io.StringIO()):
+            loaded = self.an.load_baci(spec)
+        api = ta.comtradeapicall
+        with mock.patch.object(api, "_getFinalData", return_value=answer) as request, \
+                mock.patch.object(api, "getFinalDataAvailability", return_value=pd.DataFrame(
+                    {"period": [2023], "classificationCode": ["H6"]})), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.an.check_against_comtrade(spec, loaded)
+        sent = request.call_args.kwargs
+        self.assertEqual((sent["reporterCode"], sent["cmdCode"], sent["flowCode"],
+                          sent["partnerCode"]), ("818", "0401", "M", "0,643"))
+        check = loaded.comtrade_check.set_index(["Flow", "Year"])
+        world = check.loc[("Egypt's imports, all partners", 2023)]
+        self.assertAlmostEqual(world["BACI (million USD)"], 0.0145)        # never changed
+        self.assertAlmostEqual(world["BACI / COMTRADE"], 1.45)
+        russia = check.loc[("Egypt's imports from Russian Federation", 2023)]
+        self.assertAlmostEqual(russia["BACI / COMTRADE"], 1.5)
+        missing = check.loc[("Egypt's imports, all partners", 2022)]
+        self.assertEqual(missing["BACI (million USD)"], MISSING)          # no BACI file
+        self.assertEqual(missing["Note"], "Egypt has not reported this year to COMTRADE")
+        lines = dict(loaded.checks)
+        self.assertIn("BACI's value is 1.45 times Egypt's own COMTRADE figure for 0401 in 2023; "
+                      "2022: Egypt has not reported this year to COMTRADE",
+                      lines["BACI against COMTRADE: Egypt's imports, all partners"])
+        self.assertIn("1.50 times",
+                      lines["BACI against COMTRADE: Egypt's imports from Russian Federation"])
+
     def test_parquet_cache_gives_the_same_rows(self):
         from_csv = self.load("0401").rows
         with contextlib.redirect_stdout(io.StringIO()):

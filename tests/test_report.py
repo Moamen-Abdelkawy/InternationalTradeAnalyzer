@@ -24,7 +24,7 @@ def build(folder, estimates=False, editions=False):
                          "HS code": lacking["Product_Code"], "Product": lacking["Product_Desc"],
                          "Metric": "Quantity", "Reason": "blank in the test data"})
     raw = rows.rename(columns={"value": "Value (USD)", "quantity": "Quantity (t)"})
-    q = query([2020, 2021, 2022], partner=1)
+    q = query([2020, 2021, 2022])
     data = QueryData(rows, raw, ["Value (USD)", "Quantity (t)"], gaps)
     if estimates:
         rows["quantity_estimated"] = (rows["Period"] == 2021) & (rows["Partner_Code"] == 1)
@@ -85,7 +85,7 @@ class Report(unittest.TestCase):
         for title in ("Scope, data and method", "The trend", "Suppliers", "Year by year",
                       "Data gaps and checks"):
             self.assertTrue(breaks[title], title)
-        for title in ("Shares", "Growth", "Concentration", "Products", "Alpha"):
+        for title in ("Shares", "Growth", "Concentration", "Products"):
             self.assertFalse(breaks[title], title)              # small: on the same page
         with zipfile.ZipFile(outputs.report) as report:
             footers = "".join(report.read(name).decode() for name in report.namelist()

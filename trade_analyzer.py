@@ -1,7 +1,8 @@
 """
 International Trade Analyzer
 
-Analyses one reporter's trade in one product with all its partners, or with one of them, from
+Analyses one reporter's trade in one product with all its partners, or the trade between it and
+one partner country, from
   - BACI (CEPII): annual bilateral flows 1995-2024 in which the exporter's and the importer's
     reports are reconciled
   - UN COMTRADE: annual or monthly data as reported by countries, through the COMTRADE API
@@ -27,12 +28,13 @@ import argparse
 import csv
 import datetime as dt
 import difflib
+import functools
 import os
 import sys
 import textwrap
 import time
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -45,12 +47,13 @@ from dotenv import load_dotenv
 import comtradeapicall
 
 from trade_report import fmt
-from trade_report.analysis import growth
+from trade_report.analysis import MISSING, growth, is_gap, ratio
 from trade_report.cpi import update_cpi
 from trade_report.findings import findings
 from trade_report.model import (ESTIMATE_COLUMNS, GAP_COLUMNS, HS_EDITIONS, MILLION_USD, TONS,
-                                Metric, Query, QueryData, edition_label, editions_text,
-                                estimate_column, period_label)
+                                Metric, PartnerViews, Query, QueryData, edition_label,
+                                editions_text, estimate_column, period_label)
+from trade_report.partner.findings import findings as partner_findings, period_runs
 from trade_report.report import CPI_FILE, build_report
 
 BACI_VERSION = "V202601"
@@ -110,6 +113,17 @@ class Spec:
     def flow(self) -> str:
         return "Imports" if self.flow_code == "M" else "Exports"
 
+    def views(self) -> tuple[Spec, Spec]:
+        """A partner query's other two views of the trade: the partner's trade with every
+        country in the other direction (when the reporter imports, the partner's exports), and
+        the reporter's trade with the partner the other way."""
+        other_flow = "X" if self.flow_code == "M" else "M"
+        side = replace(self, reporter_code=self.partner_code, reporter_name=self.partner_name,
+                       reporter_baci=self.partner_baci, flow_code=other_flow,
+                       partner_code=self.reporter_code, partner_name=self.reporter_name,
+                       partner_baci=self.reporter_baci)
+        return side, replace(self, flow_code=other_flow)
+
 
 @dataclass
 class Loaded:
@@ -135,6 +149,14 @@ class Loaded:
     product_total_rows: pd.DataFrame | None = None
     # COMTRADE: quantity unit as given ('kg', 'u', 'N/A') -> its records, products, periods
     quantity_units: dict[str, dict] = field(default_factory=dict)
+    # COMTRADE: the periods the reporter reported, each with its HS edition ('H6'), from
+    # COMTRADE's data availability list
+    reported: dict[int, str] = field(default_factory=dict)
+    # A partner query's other two views of the trade (see Spec.views)
+    side: Loaded | None = None
+    other: Loaded | None = None
+    # BACI: its totals beside the reporter's own COMTRADE totals (see check_against_comtrade)
+    comtrade_check: pd.DataFrame | None = None
 
 
 def parse_period(text: str, freq: str, source: str) -> list[int]:
@@ -250,7 +272,7 @@ class TradeAnalyzer:
     def comtrade_reference(self, role):
         """COMTRADE's reporter or partner list (code, name)."""
         if self.comtrade_reporter_cache is None:
-            print(f"\nLoading COMTRADE country lists...")
+            print("\nLoading COMTRADE country lists...")
             self.comtrade_reporter_cache = comtradeapicall.getReference('reporter')
             self.comtrade_partner_cache = comtradeapicall.getReference('partner')
         return self.comtrade_reporter_cache if role == "reporter" else self.comtrade_partner_cache
@@ -505,17 +527,17 @@ class TradeAnalyzer:
                     if comtrade_name and baci_name:
                         if comtrade_name.lower() == baci_name.lower():
                             print(f"✓ Country found: {comtrade_name} (Code: {country_code})")
-                            print(f"  Available in both BACI and COMTRADE")
+                            print("  Available in both BACI and COMTRADE")
                         else:
                             print(f"✓ Country found (Code: {country_code}):")
                             print(f"  COMTRADE: {comtrade_name}")
                             print(f"  BACI: {baci_name}")
                     elif comtrade_name:
                         print(f"✓ Country found: {comtrade_name} (Code: {country_code})")
-                        print(f"  Available in COMTRADE only")
+                        print("  Available in COMTRADE only")
                     else:
                         print(f"✓ Country found: {baci_name} (Code: {country_code})")
-                        print(f"  Available in BACI only")
+                        print("  Available in BACI only")
 
                     confirm = input("Confirm selection (Y/N): ").strip().upper()
                     if confirm in ['Y', 'YES']:
@@ -539,7 +561,7 @@ class TradeAnalyzer:
                     baci_name = baci_matches.iloc[0]['country_name'] if not baci_matches.empty else None
 
                     if baci_name and comtrade_name.lower() != baci_name.lower():
-                        print(f"✓ Country found:")
+                        print("✓ Country found:")
                         print(f"  COMTRADE: {comtrade_name} (Code: {comtrade_code})")
                         print(f"  BACI: {baci_name} (Code: {baci_code})")
                     else:
@@ -556,7 +578,7 @@ class TradeAnalyzer:
                     similar = difflib.get_close_matches(country_input, list(all_country_names),
                                                         n=5, cutoff=0.6)
                     if similar:
-                        print(f"\nDid you mean one of these?")
+                        print("\nDid you mean one of these?")
                         for suggestion in similar:
                             print(f"  - {suggestion}")
                         print("")
@@ -676,7 +698,7 @@ class TradeAnalyzer:
             print("")
             print("VALID INPUTS:")
             print("  A  or  All       :  Analyze trade with all partners (world total)")
-            print("  S  or  Specific  :  All partners, plus a focus on one partner country")
+            print("  S  or  Specific  :  A report on the trade with one partner country")
             print("")
             choice = input("Enter choice: ").strip().upper()
             if choice in ['A', 'ALL']:
@@ -856,18 +878,29 @@ class TradeAnalyzer:
                     partner[2], metric)
 
     # -- BACI ---------------------------------------------------------------------------
-    def read_baci_year(self, year, column, code) -> pa.Table | None:
-        """One year of BACI rows for one exporter (column i) or importer (column j)."""
+    def read_baci_year(self, year, conditions) -> pa.Table | None:
+        """One year of BACI rows matching any of the conditions, each a list of (column, code)
+        pairs that must all hold; i is the exporter and j the importer, so [[("j", 818)]] is
+        everything Egypt imports."""
         cached = self.cache_dir / f"BACI_HS92_Y{year}_{BACI_VERSION}.parquet"
         if cached.exists():
-            return pq.read_table(cached, filters=[(column, "=", int(code))])
+            return pq.read_table(cached, filters=[[(column, "=", int(code))
+                                                   for column, code in condition]
+                                                  for condition in conditions])
         source = self.baci_dir / f"BACI_HS92_Y{year}_{BACI_VERSION}.csv"
         if not source.exists():
             return None
         reader = pa_csv.open_csv(source,
                                  convert_options=pa_csv.ConvertOptions(column_types=BACI_TYPES),
                                  read_options=pa_csv.ReadOptions(block_size=32 << 20))
-        batches = [batch.filter(pc.equal(batch.column(column), int(code))) for batch in reader]
+
+        def matching(batch):
+            return functools.reduce(pc.or_, [
+                functools.reduce(pc.and_, [pc.equal(batch.column(column), int(code))
+                                           for column, code in condition])
+                for condition in conditions])
+
+        batches = [batch.filter(matching(batch)) for batch in reader]
         return pa.Table.from_batches([b for b in batches if b.num_rows], schema=reader.schema)
 
     def build_baci_cache(self):
@@ -897,38 +930,66 @@ class TradeAnalyzer:
 
     def load_baci(self, spec: Spec) -> Loaded:
         """BACI rows for one reporter, product and direction. A quantity BACI leaves blank
-        stays empty (Missing); when rows are summed, the sum is Missing if any part is."""
+        stays empty (Missing); when rows are summed, the sum is Missing if any part is. For a
+        partner query, the same pass over each year also reads the partner's trade with every
+        country in the other direction and the reporter's trade with the partner the other way
+        (see Spec.views)."""
         if spec.reporter_baci is None:
             print(f"\n✗ {spec.reporter_name} is not in BACI; use COMTRADE for this reporter.")
             return None
         if spec.partner_name and spec.partner_baci is None:
-            print(f"  ⚠ {spec.partner_name} is not in BACI, so there is no partner focus.")
+            print(f"  ⚠ {spec.partner_name} is not in BACI, so there is no partner report; the "
+                  "report covers all partners.")
         country_col, partner_col = ("j", "i") if spec.flow_code == "M" else ("i", "j")
+        # The rows of each view: (column, country) pairs that must all hold
+        views = {"main": [(country_col, spec.reporter_baci)]}
+        if spec.partner_baci is not None:
+            views["side"] = [(partner_col, spec.partner_baci)]
+            views["other"] = [(partner_col, spec.reporter_baci), (country_col, spec.partner_baci)]
         digits = SPECIAL[spec.product_code][0] if spec.product_code in SPECIAL else None
         reading = "the Parquet cache" if self.cache_dir.exists() else "the CSV files"
         print(f"\nLoading BACI data for {len(spec.periods)} year(s) from {reading}...")
-        pieces, missing, source_rows = [], {}, 0
+        pieces = {view: [] for view in views}
+        source_rows = dict.fromkeys(views, 0)
+        missing = {}
         for year in spec.periods:
             print(f"  Loading {year}...", end=" ", flush=True)
-            table = self.read_baci_year(year, country_col, spec.reporter_baci)
+            table = self.read_baci_year(year, list(views.values()))
             if table is None:
                 missing[year] = f"the BACI file for {year} is not in {self.baci_dir.name}"
                 print("✗ file not found")
                 continue
-            frame = table.to_pandas()
-            frame["k"] = frame["k"].str.zfill(6)
-            if digits is None:
-                frame = frame[frame["k"].str.startswith(spec.product_code)]
-            source_rows += len(frame)
-            if digits is not None and digits < 6:
-                frame = self.sum_baci(frame, digits)
-            pieces.append(frame)
-            print(f"✓ {len(frame):,} rows")
+            read = table.to_pandas()
+            read["k"] = read["k"].str.zfill(6)
+            for view, condition in views.items():
+                frame = read if len(views) == 1 else read[functools.reduce(
+                    np.logical_and, [read[column].to_numpy() == code
+                                     for column, code in condition])]
+                if digits is None:
+                    frame = frame[frame["k"].str.startswith(spec.product_code)]
+                source_rows[view] += len(frame)
+                if digits is not None and digits < 6:
+                    frame = self.sum_baci(frame, digits)
+                pieces[view].append(frame)
+            print(f"✓ {len(pieces['main'][-1]):,} rows")
+        print(f"  ✓ Total: {source_rows['main']:,} BACI rows")
+        loaded = self.baci_loaded(spec.product_code, pieces["main"], partner_col,
+                                  source_rows["main"], missing)
+        if len(views) > 1:
+            # Both other views have the partner's partner in the reporter's column
+            loaded.side = self.baci_loaded(spec.product_code, pieces["side"], country_col,
+                                           source_rows["side"], missing)
+            loaded.other = self.baci_loaded(spec.product_code, pieces["other"], country_col,
+                                            source_rows["other"], missing)
+        return loaded
+
+    def baci_loaded(self, product_code, pieces, partner_col, source_rows, missing) -> Loaded:
+        """The BACI rows read for one view, with the partner in partner_col (i or j)."""
+        digits = SPECIAL[product_code][0] if product_code in SPECIAL else None
         columns = ["t", "i", "j", "k", "v", "q"]
         frame = (pd.concat(pieces, ignore_index=True) if pieces else
                  pd.DataFrame({c: pd.Series(dtype="float64" if c in "vq" else "object")
                                for c in columns}))
-        print(f"  ✓ Total: {source_rows:,} BACI rows")
 
         if digits in (2, 4):
             descriptions = self.hs_descriptions("BACI")
@@ -953,7 +1014,7 @@ class TradeAnalyzer:
             "value": frame["v"] / 1000,          # thousand USD in BACI, million USD here
             "quantity": frame["q"],              # metric tons in BACI and here
         })
-        level = SPECIAL[spec.product_code][2] if spec.product_code in SPECIAL else \
+        level = SPECIAL[product_code][2] if product_code in SPECIAL else \
             "HS 6-digit product (HS 1992)"
         summed = digits is not None and digits < 6
         raw = pd.DataFrame({
@@ -976,7 +1037,7 @@ class TradeAnalyzer:
                              f"Value ({MILLION_USD})": lacking["value"]})
         return Loaded(
             rows=rows, raw=raw, raw_metrics=["Value, thousand USD (v)", "Quantity, t (q)"],
-            gaps=gaps, missing_periods=missing,
+            gaps=gaps, missing_periods=dict(missing),
             checks=[("BACI rows", f"{source_rows:,} rows of the BACI files match the query")],
             product_level=level,
             raw_note=(f"BACI rows summed by year, partner and {level}; a summed quantity is "
@@ -1008,9 +1069,10 @@ class TradeAnalyzer:
                           if len(c) == 6 and c.startswith(code))
         return children or [code]
 
-    def comtrade_availability(self, spec: Spec) -> set[int] | None:
-        """Periods the reporter has reported to COMTRADE; None when the list cannot be read."""
-        available = set()
+    def comtrade_availability(self, spec: Spec) -> dict[int, str] | None:
+        """Periods the reporter has reported to COMTRADE, each with the HS edition it reported
+        in ('' when the list does not say); None when the list cannot be read."""
+        available = {}
         try:
             for part in chunks([str(p) for p in spec.periods], COMTRADE_PERIODS_PER_CALL):
                 with warnings.catch_warnings():
@@ -1021,28 +1083,38 @@ class TradeAnalyzer:
                 if answer is None:
                     return None
                 if len(answer):
-                    available |= set(answer["period"].astype(int))
+                    editions = (answer["classificationCode"].fillna("").astype(str)
+                                if "classificationCode" in answer else [""] * len(answer))
+                    available.update(zip(answer["period"].astype(int), editions))
         except Exception as err:
             print(f"  ⚠ Could not read COMTRADE's data availability: {err}")
             return None
         return available
 
-    def load_comtrade(self, spec: Spec) -> Loaded | None:
+    def load_comtrade(self, spec: Spec, product_detail=True, partner=None,
+                      required=True) -> Loaded | None:
         """COMTRADE's records for the code asked for and for each of its HS 6-digit products,
         by partner and with partner World, which is COMTRADE's own total. Every figure is taken
         from the records COMTRADE gives for it: the totals from the code's World records, the
         partners from the code's partner records, the products from their own records. Values
         the API leaves empty, weights and quantities it records as 0 on a flow with a value, and
         quantities whose unit is N/A are Missing; so is every period the reporter has not
-        reported. Weights and quantities UN Comtrade estimated are used as given and flagged."""
+        reported. Weights and quantities UN Comtrade estimated are used as given and flagged.
+
+        For a partner query's other views: product_detail=False asks for the code alone,
+        without its products; a partner code asks for the trade with that partner alone,
+        without partner World; required=False gives every period as Missing when there is
+        nothing at all, instead of no data."""
         # The code asked for gives the totals and the partners (TOTAL does, for the AG codes);
         # its HS 6-digit products give the product detail
         query_code = "TOTAL" if spec.product_code in SPECIAL else spec.product_code
-        products = self.comtrade_product_codes(spec.product_code)
+        products = (self.comtrade_product_codes(spec.product_code) if product_detail
+                    else [query_code])
         codes = list(dict.fromkeys(products + [query_code]))
-        print(f"\nFetching COMTRADE data...")
+        print("\nFetching COMTRADE data...")
         print(f"  freq={spec.freq}, periods={len(spec.periods)}, reporter={spec.reporter_code}, "
-              f"product={spec.product_code} ({len(codes)} code(s)), flow={spec.flow_code}")
+              f"product={spec.product_code} ({len(codes)} code(s)), flow={spec.flow_code}"
+              + (f", partner={partner}" if partner is not None else ""))
         available = self.comtrade_availability(spec)
         frames, calls, truncated = [], 0, False
         for part in chunks([str(p) for p in spec.periods], COMTRADE_PERIODS_PER_CALL):
@@ -1057,7 +1129,8 @@ class TradeAnalyzer:
                         subscription_key=self.subscription_key, typeCode='C',
                         freqCode=spec.freq, clCode='HS', period=",".join(part),
                         reporterCode=str(spec.reporter_code), cmdCode=",".join(group),
-                        flowCode=spec.flow_code, partnerCode=None, partner2Code=None,
+                        flowCode=spec.flow_code,
+                        partnerCode=None if partner is None else str(partner), partner2Code=None,
                         customsCode=None, motCode=None, maxRecords=COMTRADE_MAX_RECORDS,
                         format_output='JSON', aggregateBy=None, breakdownMode='classic',
                         countOnly=False, includeDesc=True)
@@ -1069,7 +1142,7 @@ class TradeAnalyzer:
                     frames.append(data)
         data = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         print(f"  ✓ {len(data):,} records in {calls} request(s)")
-        if data.empty and not available:
+        if data.empty and not available and required:
             print("  ✗ No data returned from COMTRADE API")
             print("")
             print("  Possible reasons:")
@@ -1149,8 +1222,9 @@ class TradeAnalyzer:
 
         rows = pick(product & ~world)                     # the products, partner by partner
         partner_rows = pick(query & ~world) if separate else None
-        total_rows = pick(query & world)                  # COMTRADE's own totals
-        product_total_rows = pick(product & world) if separate else None
+        # COMTRADE's own totals; none when one partner was asked for
+        total_rows = pick(query & world) if partner is None else None
+        product_total_rows = pick(product & world) if separate and partner is None else None
 
         # The quantity unit of each product's records, N/A included, so that quantities in
         # different units are never added and the user sees which products share one
@@ -1231,23 +1305,28 @@ class TradeAnalyzer:
                                f"for {aggregated:,} of the {len(data):,} records. They are used "
                                "as COMTRADE gives them; Raw data shows both flags for each "
                                "record."))
-        if products == [spec.product_code] and len(spec.product_code) < 6 \
+        if product_detail and products == [spec.product_code] and len(spec.product_code) < 6 \
                 and spec.product_code not in SPECIAL:
             checks.append(("Product detail", "the HS code list could not be read, so COMTRADE's "
                                              "own records for the code are used, without HS "
                                              "6-digit detail"))
-        level = SPECIAL[spec.product_code][2] if spec.product_code in SPECIAL else \
-            "HS 6-digit product, in the HS edition the reporter used"
+        if not product_detail:
+            level = (SPECIAL["TOTAL"][2] if query_code == "TOTAL" else
+                     f"HS code {query_code} as a whole, in the HS edition the reporter used")
+        else:
+            level = SPECIAL[spec.product_code][2] if spec.product_code in SPECIAL else \
+                "HS 6-digit product, in the HS edition the reporter used"
         own = (f"the records for {query_code} itself and for each of its "
                f"{level.split(',')[0]}s" if separate else "the records")
+        partners = ("by partner and with partner World (COMTRADE's own total)" if partner is None
+                    else f"with {spec.partner_name} only")
         return Loaded(
             rows=rows, raw=raw, raw_metrics=[c for c in COMTRADE_COLUMNS.values() if c in raw],
             gaps=gaps, missing_periods=missing, checks=checks, product_level=level,
             raw_note=f"Every record COMTRADE returned, exactly as the API gives it, with every "
-                     f"column: {own}, by partner and with partner World (COMTRADE's own "
-                     "total). An empty field shows as Missing. The isNetWgtEstimated, "
-                     "isGrossWgtEstimated and isQtyEstimated columns mark the weights and "
-                     "quantities UN Comtrade estimated.",
+                     f"column: {own}, {partners}. An empty field shows as Missing. The "
+                     "isNetWgtEstimated, isGrossWgtEstimated and isQtyEstimated columns mark the "
+                     "weights and quantities UN Comtrade estimated.",
             # Counted, like the quantity units, over the products' records by partner
             available={key: int((~masks[key] & product & ~world).sum())
                        for key in COMTRADE_METRICS},
@@ -1255,11 +1334,155 @@ class TradeAnalyzer:
             estimated={key: int((flags & product & ~world).sum())
                        for key, flags in estimated.items()},
             editions=editions, partner_rows=partner_rows, total_rows=total_rows,
-            product_total_rows=product_total_rows, quantity_units=quantity_units)
+            product_total_rows=product_total_rows, quantity_units=quantity_units,
+            reported=available or {})
 
     # -- from data to report -----------------------------------------------------------------
     def load(self, spec: Spec) -> Loaded | None:
-        return self.load_baci(spec) if spec.source == "BACI" else self.load_comtrade(spec)
+        """A query's data; for a partner query also its other two views (see Spec.views),
+        which BACI reads in the same pass and COMTRADE fetches with requests of their own."""
+        if spec.source == "BACI":
+            return self.load_baci(spec)
+        loaded = self.load_comtrade(spec)
+        if loaded is not None and spec.partner_code is not None:
+            side, other = spec.views()
+            print(f"\nFor the partner report: {spec.partner_name}'s own reports of its "
+                  f"{side.flow.lower()}, to every country")
+            loaded.side = self.load_comtrade(side, product_detail=False, required=False)
+            self.mark_missing_codes(side, loaded.side)
+            print(f"\nFor the partner report: {spec.reporter_name}'s {other.flow.lower()} "
+                  f"{'to' if other.flow_code == 'X' else 'from'} {spec.partner_name}")
+            loaded.other = self.load_comtrade(other, partner=spec.partner_code, required=False)
+        return loaded
+
+    def mark_missing_codes(self, spec: Spec, loaded: Loaded | None):
+        """Periods a country reported in an HS edition without the code asked for are Missing:
+        it could not report trade under that code then, so no record does not mean no trade."""
+        code = spec.product_code
+        if loaded is None or code in SPECIAL or not loaded.reported:
+            return
+        reported = {p: e for p, e in loaded.reported.items() if e}
+        editions = self.hs_editions(needed=set(reported.values())).get(code)
+        if not editions:
+            return
+        word = "month" if spec.freq == "M" else "year"
+        for period, edition in sorted(reported.items()):
+            if period in spec.periods and edition not in editions \
+                    and period not in loaded.missing_periods:
+                loaded.missing_periods[period] = (
+                    f"{spec.reporter_name} reported this {word} in {edition_label(edition)}, "
+                    f"which has no code {code}")
+
+    def check_against_comtrade(self, spec: Spec, loaded: Loaded):
+        """BACI queries: each year's BACI total beside the reporter's own COMTRADE figure for the
+        same code and flow (partner World, and the partner for a partner query), so that a total
+        in which BACI counts the same trade twice shows (Usage Guide, section 9.9). The COMTRADE
+        figures go to loaded.comtrade_check and one check line per flow; no figure of the report
+        uses them. The check line says why when the check cannot be made."""
+        code = "TOTAL" if spec.product_code in SPECIAL else spec.product_code
+        what = "all products (TOTAL)" if code == "TOTAL" else code
+        name, word = spec.reporter_name, "year"
+        flows = [(0, None, f"{name}'s {spec.flow.lower()}, all partners")]
+        if spec.partner_baci is not None and spec.partner_code is not None:
+            to = "from" if spec.flow_code == "M" else "to"
+            flows.append((spec.partner_code, spec.partner_baci,
+                          f"{name}'s {spec.flow.lower()} {to} {spec.partner_name}"))
+        print("\nChecking BACI's totals against the reporter's own COMTRADE report...")
+        try:
+            key = self.subscription_key
+        except (FileNotFoundError, ValueError):
+            text = ("Not made: there is no COMTRADE API key (SUBSCRIPTION_KEY.env), so BACI's "
+                    "totals were not compared with the reporter's own COMTRADE report (Usage "
+                    "Guide, section 9.9).")
+            loaded.checks.append(("BACI against COMTRADE", text))
+            print(f"  ⚠ {text}")
+            return
+        frames = []
+        try:
+            available = self.comtrade_availability(spec)
+            for part in chunks([str(p) for p in spec.periods], COMTRADE_PERIODS_PER_CALL):
+                if frames:
+                    time.sleep(1)       # stay within the API's rate limit
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", FutureWarning)
+                    data = comtradeapicall._getFinalData(
+                        subscription_key=key, typeCode='C', freqCode=spec.freq, clCode='HS',
+                        period=",".join(part), reporterCode=str(spec.reporter_code),
+                        cmdCode=code, flowCode=spec.flow_code,
+                        partnerCode=",".join(str(p) for p, _, _ in flows), partner2Code=None,
+                        customsCode=None, motCode=None, maxRecords=COMTRADE_MAX_RECORDS,
+                        format_output='JSON', aggregateBy=None, breakdownMode='classic',
+                        countOnly=False, includeDesc=True)
+                if data is None:
+                    raise RuntimeError("COMTRADE did not answer")
+                frames.append(data)
+        except Exception as err:
+            text = f"Not made: {err}."
+            loaded.checks.append(("BACI against COMTRADE", text))
+            print(f"  ⚠ {text}")
+            return
+        data = pd.concat([f for f in frames if len(f)], ignore_index=True) \
+            if any(len(f) for f in frames) else pd.DataFrame()
+        figures = {}                # (partner, period) -> COMTRADE's value in USD, or NaN
+        for record in data.to_dict("records"):
+            if record.get("partner2Code", 0) == 0 and record.get("motCode", 0) == 0 \
+                    and record.get("customsCode", "C00") == "C00":
+                figures.setdefault((int(record["partnerCode"]), int(record["period"])),
+                                   pd.to_numeric(record.get("primaryValue"), errors="coerce"))
+        reported = {p: e for p, e in (available or {}).items() if e}
+        editions = (self.hs_editions(needed=set(reported.values())).get(code)
+                    if code != "TOTAL" and reported else None)
+        records = []
+        for partner, baci_code, label in flows:
+            rows = loaded.rows if baci_code is None else \
+                loaded.rows[loaded.rows["Partner_Code"] == baci_code]
+            sums = rows.groupby("Period")["value"].sum()
+            for period in spec.periods:
+                baci = MISSING if period in loaded.missing_periods else \
+                    float(sums.get(period, 0.0))
+                if available is not None and period not in available:
+                    value, note = MISSING, f"{name} has not reported this {word} to COMTRADE"
+                elif editions and period in reported and reported[period] not in editions:
+                    value, note = MISSING, (f"{name} reported this {word} in "
+                                            f"{edition_label(reported[period])}, which has no "
+                                            f"code {code}")
+                elif (partner, period) in figures:
+                    raw = figures[(partner, period)]
+                    value, note = (MISSING, "empty in COMTRADE") if raw != raw else \
+                        (raw / 1e6, "")
+                elif available is None:
+                    value, note = MISSING, ("no record in COMTRADE, and its availability list "
+                                            "could not be read")
+                else:
+                    value, note = 0.0, "no record in COMTRADE"
+                records.append({"Flow": label, "Year": period,
+                                f"BACI ({MILLION_USD})": baci,
+                                f"COMTRADE, {name}'s own report ({MILLION_USD})": value,
+                                "BACI / COMTRADE": ratio(baci, value), "Note": note})
+        loaded.comtrade_check = pd.DataFrame.from_records(records)
+        for _, _, label in flows:
+            part = loaded.comtrade_check[loaded.comtrade_check["Flow"] == label]
+            known = [(r["Year"], r["BACI / COMTRADE"]) for r in part.to_dict("records")
+                     if not is_gap(r["BACI / COMTRADE"]) and r["BACI / COMTRADE"] == r[
+                         "BACI / COMTRADE"]]
+            notes = {}
+            for r in part.to_dict("records"):
+                if r["Note"]:
+                    notes.setdefault(r["Note"], []).append(r["Year"])
+            if known:
+                low, high = min(v for _, v in known), max(v for _, v in known)
+                times = f"{low:.2f}" if f"{low:.2f}" == f"{high:.2f}" else \
+                    f"{low:.2f} to {high:.2f}"
+                text = (f"BACI's value is {times} times {name}'s own COMTRADE figure for {what} "
+                        f"in {period_runs([y for y, _ in known], False)}")
+            else:
+                text = "No year has both a BACI and a COMTRADE figure to compare"
+            text += "".join(f"; {period_runs(years, False)}: {note}" for note, years in
+                            notes.items())
+            text += (". The COMTRADE check sheet gives each year; no figure of the report uses "
+                     "these COMTRADE figures (Usage Guide, section 9.9).")
+            loaded.checks.append((f"BACI against COMTRADE: {label}", text))
+            print(textwrap.fill(f"  {label}: {text}", 100, subsequent_indent="    "))
 
     def assemble(self, spec: Spec, metric_key: str, loaded: Loaded) -> tuple[Query, QueryData]:
         unit_names = {}         # the quantity unit's description, for the outputs
@@ -1272,7 +1495,13 @@ class TradeAnalyzer:
                            "bilateral trade flows in which the exporter's and the importer's "
                            "declarations are reconciled. Values are in thousand USD in BACI and "
                            "in million USD here; quantities are in metric tons in both. Raw data "
-                           "keeps BACI's own units.")
+                           "keeps BACI's own units. Limitation: BACI pairs the two declarations "
+                           "product by product, at the HS 6-digit level, and keeps a flow that "
+                           "only one country declares, so when the two countries put the same "
+                           "trade under different 6-digit codes, BACI keeps both declarations and "
+                           "totals above 6 digits count that trade twice. For one country's own "
+                           "trade at 4 digits and above, compare with COMTRADE (Usage Guide, "
+                           "section 9.9).")
             rules = ["BACI: a quantity left blank in the BACI file. BACI always gives a value."]
             estimate_rules, estimated_by = [], ""
             reporter, partner = spec.reporter_baci, spec.partner_baci
@@ -1359,18 +1588,38 @@ class TradeAnalyzer:
             hs_editions=hs_editions, product_editions=product_editions,
             edition_changes=edition_changes, unit_names=unit_names,
             missing_periods=loaded.missing_periods, checks=checks)
-        return query, QueryData(loaded.rows, loaded.raw, loaded.raw_metrics, gaps, loaded.raw_note,
-                                estimates, loaded.partner_rows, loaded.total_rows,
-                                loaded.product_total_rows)
+        data = QueryData(loaded.rows, loaded.raw, loaded.raw_metrics, gaps, loaded.raw_note,
+                         estimates, loaded.partner_rows, loaded.total_rows,
+                         loaded.product_total_rows, comtrade_check=loaded.comtrade_check)
+        if loaded.side is not None or loaded.other is not None:
+            side, other = spec.views()
+            data.partner_views = PartnerViews(
+                side=self.assemble(side, metric_key, loaded.side) if loaded.side else None,
+                other=self.assemble(other, metric_key, loaded.other) if loaded.other else None)
+        return query, data
+
+    @staticmethod
+    def nothing_recorded(spec: Spec, loaded: Loaded) -> str:
+        """Why a query whose source has no records at all gets no report."""
+        if not loaded.missing_periods:
+            return "no trade recorded for this query"
+        reasons = "; ".join(f"{period_label(p, spec.freq == 'M')}: {reason}"
+                            for p, reason in sorted(loaded.missing_periods.items()))
+        if len(loaded.missing_periods) == len(spec.periods):
+            return f"no data for any period of the query ({reasons})"
+        return ("no trade recorded in the periods the source reports, and no data for the others "
+                f"({reasons})")
 
     def run_spec(self, spec: Spec, out_root: Path, metric: str | None = None):
         """Load one query and build its report; returns the outputs, or None without data."""
         loaded = self.load(spec)
         if loaded is None:
             return None
-        if loaded.rows.empty and not loaded.missing_periods:
-            print("\n✗ Analysis cancelled: no trade recorded for this query")
+        if loaded.rows.empty:
+            print(f"\n✗ Analysis cancelled: {self.nothing_recorded(spec, loaded)}")
             return None
+        if spec.source == "BACI":
+            self.check_against_comtrade(spec, loaded)
         metric = metric or spec.metric or "value"
         if spec.source == "COMTRADE" and metric == "quantity":
             refusal = self.quantity_refusal(loaded.quantity_units)
@@ -1392,9 +1641,20 @@ class TradeAnalyzer:
         print("\n" + "="*60)
         print("KEY FINDINGS")
         print("="*60)
-        for sentence in findings(analysis):
+        partner = q.partner_code is not None
+        for sentence in (partner_findings(analysis) if partner else findings(analysis)):
             print(textwrap.fill(f"• {sentence}", 100, subsequent_indent="  "))
-        if len(analysis.periods) <= 36:
+        if partner and len(analysis.periods) <= 36:
+            print("\n" + "-"*60)
+            print(f"{'Month' if q.monthly else 'Year':8s} {m.heading:>22s} {'Growth':>10s} "
+                  f"{'Share':>8s} {'Rank':>6s}")
+            print("-"*60)
+            for row in analysis.position.to_dict("records"):
+                print(f"{period_label(row['Period'], q.monthly, True):8s} "
+                      f"{fmt.figure(row['Figure'], m):>22s} "
+                      f"{fmt.pct(row['Growth'], 1, signed=True):>10s} "
+                      f"{fmt.pct(row['Share']):>8s} {str(row['Rank']):>6s}")
+        elif len(analysis.periods) <= 36:
             print("\n" + "-"*60)
             print(f"{'Month' if q.monthly else 'Year':8s} {m.heading:>22s} {'Growth':>10s} "
                   f"{'Largest share':>14s}")
@@ -1430,7 +1690,9 @@ class TradeAnalyzer:
         while True:
             spec = self.ask_query()
             loaded = self.load(spec)
-            if loaded is not None and (len(loaded.rows) or loaded.missing_periods):
+            if loaded is not None and len(loaded.rows):
+                if spec.source == "BACI":
+                    self.check_against_comtrade(spec, loaded)
                 metric = spec.metric or self.get_metric_choice_comtrade(
                     loaded.available, loaded.estimated, loaded.quantity_units)
                 query, data = self.assemble(spec, metric, loaded)
@@ -1439,7 +1701,7 @@ class TradeAnalyzer:
                 except PermissionError as err:
                     print(f"\n✗ {err}")
             elif loaded is not None:
-                print("\n✗ Analysis cancelled: no trade recorded for this query")
+                print(f"\n✗ Analysis cancelled: {self.nothing_recorded(spec, loaded)}")
             print(f"\n{'='*60}")
             print("ANALYSIS COMPLETE")
             print(f"{'='*60}\n")
@@ -1482,7 +1744,8 @@ def parse_args(argv=None):
                         help="A annual (default) or M monthly (COMTRADE only)")
     parser.add_argument("--period", help="2015-2024, 2023, 202301-202312 or 202306")
     parser.add_argument("--reporter", help="reporter country, by code or name")
-    parser.add_argument("--partner", help="focus partner, by code or name (default: all)")
+    parser.add_argument("--partner", help="one partner country, by code or name, for a report on "
+                                          "the trade with it (default: all partners)")
     parser.add_argument("--product", help="HS code (2, 4 or 6 digits) or TOTAL, AG2, AG4, AG6")
     parser.add_argument("--flow", help="M imports or X exports")
     parser.add_argument("--metric", help="BACI: value or quantity; COMTRADE: value, cif, fob, "

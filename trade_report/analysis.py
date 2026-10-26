@@ -256,12 +256,10 @@ class Analysis:
         self.summary = self._summary()
         self.partners = self._entities(self.partner_matrix, "Partner", self.summary["total"])
         self.products = self._entities(self.product_matrix, "Product", self.summary["total"])
-        self.focus = None
         self.focus_products = None
         if query.partner_code is not None and query.partner_code in self.partner_matrix[
                 self.metric.key].index:
             code = query.partner_code
-            self.focus = self._focus(code)
             mine = rows[rows["Partner_Code"] == code]
             matrices = {m.key: self._order(self._matrix("Product_Code", m, mine),
                                            self._matrix("Product_Code", self.metric, mine))
@@ -322,8 +320,11 @@ class Analysis:
 
     def _period_totals(self, metric: Metric) -> pd.Series:
         """Each period's total: the source's own (COMTRADE's partner World) where it gives
-        one, else the partners added up, which is Missing when any of them lacks the figure."""
+        one, else the partners added up, which is Missing when any of them lacks the figure.
+        A period the source did not report is Missing, even when no partner has any rows."""
         partners = self._column_totals(self.partner_matrix[metric.key])
+        for period in self.missing_periods:
+            partners[period] = MISSING
         if self.total_rows is None:
             return partners
         own = (sum_by(self.total_rows, ["Period"], metric) if len(self.total_rows)
@@ -620,50 +621,6 @@ class Analysis:
         if a:
             return f"Lost by {end_l}"
         return "Intermittent" if traded else "No trade"
-
-    def _focus(self, code) -> pd.DataFrame:
-        """The chosen partner against all partners, period by period."""
-        key = self.metric.key
-        values = self.partner_matrix[key]
-        mine = values.loc[code]
-        world = self.period_totals[key]
-        name = self.partner_names[code]
-        records = []
-        for i, period in enumerate(self.periods):
-            column = values[period]
-            gap = gap_of(*column)
-            if gap:
-                rank = gap
-            else:
-                numbers = column.map(number)
-                rank = (int((numbers > number(mine[period])).sum()) + 1
-                        if number(mine[period]) > 0 else "")
-            previous = self.periods[i - 1] if i else None
-            record = {"Period": period,
-                      f"{name}: {self.metric.heading}": mine[period],
-                      f"All {self.q.roles}: {self.metric.heading}": world[period],
-                      "Share": ratio(mine[period], world[period]),
-                      "Rank": rank,
-                      f"{name}: growth": growth(mine[period], mine[previous])
-                      if previous else np.nan,
-                      f"All {self.q.roles}: growth": growth(world[period], world[previous])
-                      if previous else np.nan}
-            mine_g, world_g = record[f"{name}: growth"], record[f"All {self.q.roles}: growth"]
-            gap = gap_of(mine_g, world_g)
-            record["Growth gap (pp)"] = gap or (
-                (number(mine_g) - number(world_g)) * 100
-                if not (np.isnan(number(mine_g)) or np.isnan(number(world_g))) else np.nan)
-            for metric in self.metrics[1:]:
-                record[f"{name}: {metric.heading}"] = self.partner_matrix[metric.key].loc[code,
-                                                                                          period]
-            if self.q.unit_value:
-                money_key, volume_key = self.q.unit_value
-                record[f"{name}: unit value"] = self.unit_value(
-                    self.partner_matrix[money_key].loc[code, period],
-                    self.partner_matrix[volume_key].loc[code, period])
-                record[f"All {self.q.roles}: unit value"] = self.unit_values[period]
-            records.append(record)
-        return pd.DataFrame.from_records(records)
 
     # -- what is missing ----------------------------------------------------------------
     def gap_levels(self) -> list[tuple[Metric, list[tuple[str, int, int, list[int]]]]]:

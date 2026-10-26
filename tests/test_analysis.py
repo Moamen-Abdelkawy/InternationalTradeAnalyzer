@@ -5,11 +5,11 @@ import unittest
 import numpy as np
 
 from trade_report.analysis import (MISSING, MIXED_UNITS, Analysis, cagr, growth, hhi,
-                                   is_gap, number, ratio, sum_by, total_of, trend_growth)
+                                   number, ratio, sum_by, total_of, trend_growth)
 from trade_report.findings import findings
 from trade_report.model import Metric, editions_text
 
-from helpers import QUANTITY, VALUE, query, rows, wheat_like
+from helpers import QUANTITY, query, rows, wheat_like
 
 
 class Formulas(unittest.TestCase):
@@ -102,11 +102,6 @@ class AnnualAnalysis(unittest.TestCase):
         self.assertEqual(a.partners.iloc[0]["Name"], "Alpha")
         self.assertEqual(a.summary["total"], MISSING)
 
-    def test_focus(self):
-        focus = self.a.focus.set_index("Period")
-        self.assertAlmostEqual(focus.loc[2020, "Share"], 0.75)
-        self.assertEqual(focus.loc[2022, "Rank"], 1)
-
     def test_findings_state_gaps(self):
         text = " ".join(findings(self.a))
         self.assertIn("does not report quantity", text)
@@ -171,6 +166,17 @@ class MissingPeriods(unittest.TestCase):
         self.assertEqual(a.summary["total"], MISSING)
         self.assertTrue(a.partners["Status"].str.startswith("Unknown").all())
         self.assertIn("No data for 2022", " ".join(findings(a)))
+
+    def test_no_data_at_all_is_missing_never_zero(self):
+        # Every requested period unreported (a BACI year file absent, for example): there are
+        # no rows at all, and the totals must still say Missing, not 0
+        reason = "the BACI file for this year is not in the folder"
+        a = Analysis(query([2022, 2023], missing={2022: reason, 2023: reason}), rows([]))
+        self.assertEqual(a.period_totals["value"].tolist(), [MISSING, MISSING])
+        self.assertEqual(a.summary["total"], MISSING)
+        # One period unreported, the other reported without trade: 0 there, Missing here
+        a = Analysis(query([2022, 2023], missing={2022: reason}), rows([]))
+        self.assertEqual(a.period_totals["value"].tolist(), [MISSING, 0.0])
 
 
 class Monthly(unittest.TestCase):

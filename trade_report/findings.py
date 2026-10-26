@@ -55,9 +55,6 @@ def findings(a: Analysis) -> list[str]:
                    + f"; {len(lost)} traded in {first_l} but not in {last_l}"
                    + (f" (largest: {lost.iloc[0]['Name']})" if len(lost) else "") + ".")
 
-    if a.focus is not None:
-        out.append(_focus_sentence(a, first_l, last_l))
-
     if a.partner_order.key != m.key:
         out.append(f"{q.roles.capitalize()} are listed by {a.partner_order.label.lower()}, not "
                    f"ranked: {m.label.lower()} is missing for some of them, so their order by "
@@ -86,23 +83,6 @@ def rated_growth(a: Analysis):
 
 def _count(n: int, noun: str) -> str:
     return f"{n} {noun}" + ("" if n == 1 else "s")
-
-
-def _focus_sentence(a: Analysis, first_l: str, last_l: str) -> str:
-    q, m, f = a.q, a.metric, a.focus
-    name = a.partner_names[q.partner_code]
-    verb = "supplied" if q.flow == "Imports" else "took"
-    metric = m.label.lower()
-    first, last = f["Share"].iloc[0], f["Share"].iloc[-1]
-    rank = number(f["Rank"].iloc[-1])
-    rank_text = f", ranking #{int(rank)} in {last_l}" if rank == rank else ""
-    if not is_gap(first) and not is_gap(last):
-        return (f"{name} {verb} {pct(first)} of the {metric} in {first_l} and {pct(last)} in "
-                f"{last_l}{rank_text}.")
-    parts = [f"its {label} share cannot be stated ({metric} is missing)" if is_gap(share)
-             else f"{pct(share)} of the {metric} in {label}"
-             for share, label in ((first, first_l), (last, last_l))]
-    return f"{name} {verb} {parts[0]}; {parts[1]}{rank_text}."
 
 
 def _growth_sentence(a: Analysis) -> str:

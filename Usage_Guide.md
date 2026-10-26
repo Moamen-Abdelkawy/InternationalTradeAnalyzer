@@ -197,7 +197,7 @@ The BACI database provides harmonized bilateral trade data. It's a large file th
 
 To download trade data from the UN COMTRADE database, you need a free API key.
 
-> **Using BACI only?** You can skip this section: BACI queries don't need a key. They still need an internet connection, because the analyzer reads COMTRADE's public lists of country names and product descriptions.
+> **Using BACI only?** BACI queries run without a key, but the key is worth getting: with it, every BACI report checks its totals against the reporter's own COMTRADE figures ([Section 9.9](#99-baci-and-comtrade-strengths-limits-and-which-to-use)); without it, the report says the check was not made. BACI queries also need an internet connection, because the analyzer reads COMTRADE's public lists of country names and product descriptions.
 
 ### Step 5.1: Register for a COMTRADE Account
 
@@ -333,7 +333,7 @@ You can give the whole query at once instead of answering questions. For example
 python trade_analyzer.py --source baci --reporter Egypt --product 1001 --flow M --period 2015-2024
 ```
 
-Or Egypt's monthly wheat imports in 2024, from COMTRADE, with a focus on Russia:
+Or a report on Egypt's monthly wheat imports from Russia in 2024, from COMTRADE:
 
 ```
 python trade_analyzer.py --source comtrade --freq M --period 202401-202412 --reporter 818 --product 1001 --flow M --partner "Russian Federation"
@@ -345,7 +345,7 @@ python trade_analyzer.py --source comtrade --freq M --period 202401-202412 --rep
 | `--freq` | `A` annual (the default) or `M` monthly (COMTRADE only) | `--freq M` |
 | `--period` | A year or a range of years; for monthly data, a month or a range of months | `--period 2015-2024`, `--period 202401-202412` |
 | `--reporter` | The reporter country, by name or code | `--reporter Egypt`, `--reporter 818` |
-| `--partner` | Optional: a partner to focus on, by name or code. Leave it out to analyze all partners without a focus | `--partner "Russian Federation"` |
+| `--partner` | Optional: one partner country, by name or code, for a report on the trade between the reporter and that partner ([Section 9.8](#98-the-partner-report)). Leave it out to analyze all partners | `--partner "Russian Federation"` |
 | `--product` | An HS code with 2, 4 or 6 digits, or `TOTAL`, `AG2`, `AG4`, `AG6` | `--product 1001` |
 | `--flow` | `M` imports or `X` exports | `--flow M` |
 | `--metric` | The metric used to rank partners and measure growth (default `value`). BACI: `value` or `quantity`. COMTRADE: `value`, `cif`, `fob`, `netweight`, `grossweight` or `quantity` | `--metric quantity` |
@@ -371,10 +371,10 @@ comtrade,M,202401-202412,Egypt,,1001,M,value
 comtrade,A,2024,Egypt,,AG2,X,value
 ```
 
-Its rows show each kind of query: BACI for all partners and with a focus on one partner (Russian Federation); COMTRADE annual data measured by net weight, by value, and by quantity for a product measured in one unit (live bovine animals, counted in items); monthly data; and all products by HS chapter (`AG2`).
+Its rows show each kind of query: BACI for all partners and for the trade with one partner (Russian Federation); COMTRADE annual data measured by net weight, by value, and by quantity for a product measured in one unit (live bovine animals, counted in items); monthly data; and all products by HS chapter (`AG2`).
 
 1. Create a CSV file with one query per row, or edit a copy of `batch_example.csv`. The columns have the same names as the command-line options:
-   - Leave `partner` empty to analyze all partners without a focus.
+   - Leave `partner` empty to analyze all partners; name a partner for a report on the trade with it.
    - Leave `freq` empty for annual data, and `metric` empty for value.
    - You can make the file in Excel and save it as **CSV UTF-8**. If Excel drops the leading zero of a product code (`0401` becomes `401`), the analyzer adds it back.
 
@@ -448,9 +448,11 @@ VALID INPUTS:
   C  or  COMTRADE  :  UN COMTRADE API (as reported by countries)
 ```
 
-- **BACI**: Uses the downloaded database (1995-2024), data is harmonized
+- **BACI**: Uses the downloaded database (1995-2024), in which CEPII reconciles the two countries' reports of each flow
 - **COMTRADE**: Uses the API, with data as reported by countries (1962-present)
 - If you chose monthly data in Step 8.1, this question is skipped: monthly data comes from COMTRADE
+
+> **Important — choosing the source.** For one country's own trade, especially totals at the 4-digit level and above, COMTRADE is usually the safer choice. BACI can count the same trade twice when the two countries put it under different 6-digit codes: Egypt's wheat imports in BACI, for example, are 1.3 to 1.9 times Egypt's own reported figures in 2015–2019. BACI is the right choice, and often the only one, for countries or years not reported to COMTRADE, for consistent series from 1995 to 2024, and for many-country comparisons at the 6-digit level. [Section 9.9](#99-baci-and-comtrade-strengths-limits-and-which-to-use) explains when and why.
 
 ### Step 8.3: Period Selection
 
@@ -514,7 +516,7 @@ Reference: Product codes can be found in `data/meta/product_codes_HS92_V202601.c
 ### Step 8.7: Partner Selection
 
 - `A` or `All`: Analyze trade with all partners
-- `S` or `Specific`: All partners, plus a focus on one partner country. You then enter the partner the same way as the reporter (Step 8.4). The results get extra sections on that partner: its share and rank in each period, and the products traded with it.
+- `S` or `Specific`: A report on the trade between the reporter and one partner country. You then enter the partner the same way as the reporter (Step 8.4). The whole report is then about the two countries: see [Section 9.8](#98-the-partner-report).
 
 ### Step 8.8: Metric Selection
 
@@ -559,6 +561,8 @@ The analyzer then builds the report. In the terminal, it shows:
 - **Key findings**: a few sentences on the trend, the largest partners, growth, concentration, data gaps, the source's own estimates, and the HS editions when the data spans more than one
 - A table of the totals by year (or month), with growth and the largest partner's share
 - Where the files are
+
+For a partner report, the findings are about the two countries, and the table gives the partner's figure, growth, share and rank in each period.
 
 Finally, it asks `Run another analysis? (Y/N)`.
 
@@ -612,11 +616,13 @@ The workbook holds everything: the raw data of the query, the analysis for each 
 | **Shares by year** | Each partner's share of each period's total |
 | **Growth by year** | Each partner's growth on the previous period |
 | **Products**, **Products by year** | The same analysis by HS product; when the data spans more than one HS edition, an **HS editions** column and a note (see [Section 9.4](#94-hs-editions)) |
-| **Partner focus**, **Partner products** | Only when you chose a partner: that partner's value, share, rank and growth in each period, and the products traded with it |
 | **Data gaps** | Every data point the source does not report, with the reason (left out when there are none) |
 | **Source estimates** | Every figure the database itself marks as an estimate, with its flag; the analysis uses each one as given (left out when there are none) |
+| **COMTRADE check** | BACI queries only: BACI's total for each year beside the reporter's own COMTRADE figure for the same code and flow, with the ratio, as a check of BACI ([Section 9.9](#99-baci-and-comtrade-strengths-limits-and-which-to-use)); no figure of the report uses it |
 | **Raw data** | Every record of the query, exactly as the source delivers it (for COMTRADE, with its flags and its partner World totals), in an Excel table you can filter and sort |
 | **Charts** | Every chart of the report |
+
+A partner report has a workbook of its own: see [Section 9.8](#98-the-partner-report).
 
 ### 9.3 Missing, n/a, Mixed Units and Source Estimates
 
@@ -630,7 +636,7 @@ Some cells hold words instead of numbers:
 
 **Where the figures come from.** Every figure comes from the records the source gives for it:
 - **COMTRADE**: the totals are COMTRADE's own figures for the code you asked for with partner **World**, the same figures the COMTRADE website shows when you choose partner World. The partner figures are COMTRADE's figures for that code by partner, and the product figures are each HS 6-digit product's own figures. Only where COMTRADE leaves a total empty does the analyzer add up the partners, and the key findings say so.
-- **BACI** gives flows between two countries only, so its totals are those flows added up.
+- **BACI** gives flows between two countries only, one row per HS 6-digit product, so its totals are those flows added up. When two countries put the same trade under different 6-digit codes, BACI keeps both countries' reports and these totals count that trade twice: see [Section 9.9](#99-baci-and-comtrade-strengths-limits-and-which-to-use).
 
 Because COMTRADE reports each level separately, the products do not always add up to the total: a product can lack a quantity that COMTRADE's total for the heading includes. The checks on the About sheet show whether the partners and the products add up to the total.
 
@@ -697,15 +703,150 @@ The `charts` folder holds report-ready PNG charts, numbered in reading order. Ea
 | `05_growth.png` | The large partners' CAGR and change in share |
 | `06_concentration.png` | Concentration (HHI) and the share of the three largest partners |
 | `07_products.png` | The largest products |
-| `08_partner_focus.png` | Only when you chose a partner: that partner against all others |
 | `09_seasonality.png` | Monthly queries only: each month across the years |
 
-A figure the source does not report is never drawn as zero: the charts label it Missing (or hatch it, in the heat map). When a chart shows figures that include the source's own estimates, its footnote says so. The same charts are in the workbook's Charts sheet.
+A figure the source does not report is never drawn as zero: the charts label it Missing (or hatch it, in the heat map). When a chart shows figures that include the source's own estimates, its footnote says so. The same charts are in the workbook's Charts sheet. A partner report has charts of its own (Section 9.8).
 
 ### 9.7 The Word Report and the Summary
 
-- **`report.docx`** is a report you can edit and share: the key findings and figures, the scope and method, a numbered section for each chart with its table, and finally the data gaps, source estimates and checks. The pages are numbered, and each main section starts on a new page; the small chart sections (shares, growth, concentration, products, the partner focus and seasonality) follow on the same page.
+- **`report.docx`** is a report you can edit and share: the key findings and figures, the scope and method, a numbered section for each chart with its table, and finally the data gaps, source estimates and checks. The pages are numbered, and each main section starts on a new page; the small chart sections (shares, growth, concentration, products and seasonality) follow on the same page.
 - **`summary.md`** is a one-page summary in Markdown: key findings, key figures, the totals by period, the top partners and the list of files. It opens in any text editor and displays nicely on GitHub.
+
+### 9.8 The Partner Report
+
+When you choose a partner, the report is about the trade between the two countries. The reporter's trade with every partner is still read, because the partner's share, rank and competitors need it, but the workbook, the charts, the Word report and the summary are about the partner. The report answers these questions:
+
+| Question | What the report shows |
+|----------|-----------------------|
+| How much do the two countries trade, and how is it changing? | The trade with the partner by period: value, weight or quantity, growth, CAGR, trend growth, constant dollars and unit value |
+| How much does the reporter rely on the partner? | The partner's share of the reporter's total and its rank by period, its growth against the total's, and its part of the total's change between the first and the last year |
+| Who competes with the partner? | The reporter's largest partners over the whole period, with the partner shaded, and their shares by period |
+| At what price? | The partner's unit value by period, against all partners together and against its largest competitors |
+| Which products? | The products traded with the partner, and the partner's share of the reporter's trade in each |
+| How much does the partner rely on the reporter? | The reporter's share of the partner's trade in the other direction (for an imports query, the partner's exports to every country), its rank among the partner's markets or suppliers, and the partner's largest markets or suppliers |
+| Do the two countries' figures agree? | COMTRADE only: the reporter's figures beside the partner's own figures for the same trade, with the difference and the ratio |
+| What flows the other way? | The reporter's trade with the partner in the other direction, and the balance of trade in value |
+
+**Where the partner's side comes from.**
+- **BACI**: the partner's rows in the same BACI files, read in the same pass over each year. BACI combines the exporter's and the importer's reports into one figure per flow and 6-digit product, so there is no second figure to compare; where the two countries used different 6-digit codes, it keeps both reports instead (Section 9.9). The report gives the number of countries BACI records for the partner each year, so you can see when its coverage changes.
+- **COMTRADE**: the partner's own reports, which take about twice as many requests as an All-partners query. A period the partner has not reported to COMTRADE has no figures: they are Missing, with that reason, and nothing replaces them. Russia, for example, has not reported to COMTRADE since 2021. When the partner did not report every period, its largest markets or suppliers are shown for the latest period it reported in full.
+
+**The two countries' figures** are shown as each country reports them, without adjustment. They usually differ: imports are usually valued CIF (with freight and insurance) and exports FOB, and the two countries may record a shipment in different periods, under different codes or with a different partner. The analyzer does not correct or explain the difference.
+
+**HS editions.** Each country reports in its own HS edition. When the partner reported a period in an edition that has no such code (for example `100190`, which exists up to HS 2007), that period is Missing for the partner, with the reason, rather than looking as if there was no trade.
+
+The workbook:
+
+| Sheet | What it shows |
+|-------|---------------|
+| **About**, **Summary** | As in every report, about the two countries |
+| **Yearly** (or **Monthly**) | The trade with the partner by period: each metric and its growth, unit value against all partners, constant dollars, share and rank; growth over the whole period below |
+| **Annual totals** | Monthly queries only: complete calendar years, for the partner and for all partners |
+| **Market position** | The partner's figure against the total by period: share, rank, growth against the total's and the largest partner; below it, the partner's part of the total's change |
+| **Competitors** | The reporter's 10 largest partners, and the partner if it is not among them, with the partner's row shaded; their shares by period below |
+| **Prices** | Unit values by period: the partner, all partners together and the largest competitors |
+| **Products**, **Products by year** | The products traded with the partner, with the partner's share of the reporter's trade in each |
+| **Partner side** | The reporter's share and rank in the partner's trade by period, the number of countries recorded, and the partner's largest markets or suppliers |
+| **Both reports** | COMTRADE only: the two countries' figures side by side, metric by metric |
+| **Other direction** | The trade the other way by period, the balance of trade, and its products |
+| **Data gaps**, **Source estimates** | As in every report, for each view of the trade, with a column saying which |
+| **COMTRADE check** | BACI only: BACI's totals beside the reporter's own COMTRADE figures, for all partners and for the partner (Section 9.9) |
+| **Raw data**, **Raw data, partner side**, **Raw data, other direction** | The records of each view, exactly as the source delivers them |
+
+The charts:
+
+| Chart | What it shows |
+|-------|---------------|
+| `01_trade_with_partner.png` | The trade with the partner by period, with the headline figures |
+| `02_partner_share.png` | The partner against all other partners: its share and rank by period, and its growth against the total's |
+| `03_competitors.png` | The reporter's largest partners, the partner in orange |
+| `04_competitor_shares.png` | The shares of the partner and its five largest competitors by period |
+| `05_prices.png` | Unit values: the partner, all partners together and the three largest competitors |
+| `06_products.png` | The products traded with the partner |
+| `07_partner_side.png` | The reporter in the partner's trade, and the partner's largest markets or suppliers |
+| `08_both_reports.png` | COMTRADE only: the two countries' figures side by side |
+| `09_other_direction.png` | The trade in both directions and the balance |
+| `10_seasonality.png` | Monthly queries only: the trade with the partner by month |
+
+The Word report has a numbered section for each of these, and `summary.md` gives the key findings, the key figures and the main tables.
+
+### 9.9 BACI and COMTRADE: Strengths, Limits and Which to Use
+
+Both databases come from the same reports, those countries send to the United Nations, but they use them differently. COMTRADE gives each country's own report. BACI, built by CEPII, combines the two reports of each flow (the exporter's and the importer's) into one figure. This section explains what that means for your results, including a limitation of BACI that you need to know before using its totals for one country.
+
+**How BACI is built.** In CEPII's words (BACI page, last updated 30 January 2026): "Since countries report both their imports and their exports to the United Nations, the raw data we use may have duplicates flows". The two reports "should match, but in practice are virtually never identical", because "Import values are reported CIF (cost, insurance and freight) while exports are reported FOB (free on board)" and because "Mistakes are made, because of uncertainty on the final destination of exports, discrepancies in the classification of a given product, etc...". BACI then provides "a unique, reconciled trade flow": "CIF costs are estimated and removed from import values to compute FOB import values", and "The reliability of each country as a reporter of trade data is assessed", so that a less reliable reporter gets a lower weight.
+
+A flow in BACI is one year, one exporter, one importer and one HS 6-digit product: the readme of version 202601 describes the files as "Trade flows at the year - exporter - importer - product level. Products in Harmonized System 6-digit nomenclature." According to CEPII's method paper, BACI provides a reconciled figure "for each flow reported at least by one of the partners", and "When only one of the reports is missing, the non missing declaration is used". Quantities reported in units other than tons are converted to tons using "implicit rates of conversion" that CEPII estimates. So BACI's figures are CEPII's estimates built from the two countries' reports; the analyzer uses them exactly as BACI gives them.
+
+**The limitation: the same trade counted twice.** Because BACI pairs the two reports product by product, at the 6-digit level, it can only pair them when both countries put the goods under the same 6-digit code. When they use **different** codes, BACI sees two flows, each reported by one country only, and keeps both. Every total above 6 digits (a heading, a chapter, all products, and so every All-partners or partner total the analyzer builds from BACI) then counts that trade twice. It takes two conditions: both countries report the flow, and they classify it differently. Anyone who adds up BACI's rows gets the same totals; the analyzer neither causes nor corrects it.
+
+**An example, from the source rows: wheat (HS `1001`) from the Russian Federation to Egypt.** Egypt declares its wheat imports as durum wheat (`100119`); Russia declares the same exports as other wheat (`100199`). In HS 1992, BACI's durum wheat is `100110` and its other wheat is `100190`. These are the two rows of the BACI file for 2020 (`BACI_HS92_Y2020_V202601.csv`; value `v` in thousand USD, quantity `q` in tons):
+
+```
+t,i,j,k,v,q
+2020,643,818,100110,1950913.245,6845303.197
+2020,643,818,100190,1796606.895,8254550.2
+```
+
+The first row is exactly Egypt's own COMTRADE report of its 2020 imports from Russia (code `100119`: 1,950.9 million USD, 6,845,303 t). The second is exactly Russia's own report of its 2020 exports to Egypt (code `100199`: 1,796.6 million USD, 8,254,550 t). They are two reports of the same trade, and BACI's total for `1001` adds them up:
+
+| Year | Egypt's report (imports from Russia), million USD | Russia's report (exports to Egypt), million USD | BACI `1001`, million USD | BACI's total is |
+|------|---:|---:|---:|---|
+| 2015 | 1,080.8 | 841.6 | 841.6 | Russia's report only |
+| 2016 | 1,118.3 | 988.6 | 2,106.9 | both reports added |
+| 2017 | 1,597.9 | 1,433.5 | 3,031.4 | both reports added |
+| 2018 | 2,053.6 | 1,893.3 | 3,946.9 | both reports added |
+| 2019 | 1,432.8 | 1,273.6 | 2,706.5 | both reports added |
+| 2020 | 1,950.9 | 1,796.6 | 3,747.5 | both reports added |
+| 2021 | 1,820.5 | 1,552.6 | 3,371.7 | both reports added (Egypt's 6-digit records, 1,819.1, plus Russia's) |
+| 2022 | 2,167.4 | not reported | 2,167.4 | Egypt's report only |
+| 2023 | 2,560.3 | not reported | 2,560.3 | Egypt's report only |
+| 2024 | 3,057.3 | not reported | 3,057.3 | Egypt's report only |
+
+In 2015 the opposite happened: both countries reported some durum wheat, so BACI paired those two reports into one figure, and its durum row is Russia's 0.8 million USD; Egypt's 1,080.7 million USD of durum wheat from Russia does not appear in BACI at all. From 2022 Russia stopped reporting, so BACI has only Egypt's report. A growth rate or share computed from BACI across these years compares years counted once with years counted twice: from 2015 to 2016, for example, BACI's figure rises by 150%, while each country's own reports rise by 3.5% (Egypt's) and 17.5% (Russia's).
+
+The same happens across Egypt's other wheat suppliers, so the All-partners totals are affected too:
+
+| Year | Egypt's own report, all suppliers (COMTRADE), million USD | BACI, all suppliers, million USD | BACI / Egypt's report |
+|------|---:|---:|---:|
+| 2015 | 2,523.0 | 3,377.8 | 1.34 |
+| 2016 | 2,238.5 | 4,069.2 | 1.82 |
+| 2017 | 2,636.5 | 4,425.1 | 1.68 |
+| 2018 | 2,787.7 | 4,967.3 | 1.78 |
+| 2019 | 2,975.5 | 5,646.1 | 1.90 |
+
+In tons, BACI's rows for 2018 add up to 22.1 million tons of wheat (9.5 million under durum, 12.5 million under other wheat), against 10.8 million tons in Egypt's own report (the weight on its 6-digit records, which UN Comtrade estimated; its record for `1001` itself has no weight). All figures are from BACI version 202601 and from COMTRADE, retrieved in October 2026. The first two queries of `batch_example.csv` are these BACI wheat queries: run the same queries with `--source comtrade` to see the difference for yourself.
+
+**Valuation.** CEPII describes removing freight and insurance costs from import values. In version 202601, the BACI rows above that come from Egypt's reports equal Egypt's declared values exactly, and Egypt reports its imports CIF (COMTRADE's `cifvalue`). The release notes of version 202601 say only that the "Fobization process was simplified, with little effects on final outcome". We have not checked other flows.
+
+**How common is it?** It needs a product that the two countries classify differently, which is most likely between sibling codes that customs cannot easily tell apart (durum and other wheat, for example) and for the residual "other" codes. It has been verified here for Egypt's wheat only; how widespread it is across BACI has not been measured. Where the two countries use the same codes, BACI's totals do not have this problem.
+
+**How to spot it.** Every BACI report checks itself against COMTRADE. It sets BACI's total for each year beside the reporter's own COMTRADE figure for the same code and flow, partner World (and the partner, in a partner report), with the ratio of the two:
+- The **COMTRADE check** sheet gives each year, with a note where COMTRADE has no figure (a year the reporter did not report, or an HS edition without the code).
+- The checks on the About sheet and at the end of the Word report sum it up. For the first query of `batch_example.csv` (Egypt's wheat imports, 2015–2024) the line reads: "BACI's value is 1.07 to 1.90 times Egypt's own COMTRADE figure for 1001 in 2015–2024".
+- No figure of the report uses the COMTRADE figures: they are only set beside BACI's. The check makes two COMTRADE requests for up to 12 years, and two more for each further 12, and needs an API key; without one, the report says the check was not made.
+
+Where BACI's total is well above the reporter's own, look at its 6-digit rows (the **Products** sheet, or the partner report's Products sheet). Two sibling codes that each carry a large flow from the same partner are the sign of this limitation, though a genuine mix of both products looks the same.
+
+**Which source to use.**
+
+| You want | Use | Why |
+|----------|-----|-----|
+| One country's own imports or exports, especially totals at 4 digits and above | COMTRADE | Each figure is the country's own report, so nothing is counted twice; it matches the country's official statistics and has the latest years and monthly data |
+| A country, or years, not reported to COMTRADE | BACI (often the only option) | BACI fills them in from the partners' reports: the Russian Federation's trade after 2021, for example |
+| Consistent series from 1995 to 2024 at the 6-digit level | BACI | One classification (HS 1992) for every year, with no edition changes |
+| Comparisons across many countries at the 6-digit level, or quantities and unit values comparable across countries | BACI | One figure per flow, all quantities in tons; CEPII states that BACI "was mostly designed for high disaggregated studies" |
+| The two countries' own figures for the same trade | COMTRADE partner report | Both reports side by side, unadjusted (Section 9.8) |
+
+COMTRADE has limits of its own: each country's classification choices stay as they are (Egypt's wheat appears as durum wheat), a country that has not reported a period has no figures for it, and two countries' reports of the same trade usually differ. The usual practice in trade statistics is to take one country's reports and stay with them, and to compare the two sides only at a level where their codes agree (here, the heading `1001`). The United Nations lists "improper declaration of product classification at the customs border, either entry or exit" among the known causes of differences between two countries' reports. A database that corrects misclassification before pairing the reports, as the OECD describes for its Balanced International Merchandise Trade Statistics, is the systematic remedy; the analyzer does not use such a database.
+
+**References**
+- CEPII, [BACI database page](https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37), last updated 30 January 2026.
+- CEPII, [BACI release notes, version 202601](https://www.cepii.fr/DATA_DOWNLOAD/baci/doc/release_notes_202601.pdf), P. Cotterlaz, 22 January 2026; and the `Readme.txt` that comes with the BACI files.
+- Gaulier, G. and Zignago, S. (2010). [BACI: International Trade Database at the Product-Level. The 1994-2007 Version](https://www.cepii.fr/CEPII/en/publications/wp/abstract.asp?NoDoc=2726). CEPII Working Paper 2010-23. The method paper CEPII asks BACI users to cite.
+- United Nations Statistics Division (2019). [Guidelines on Analyzing and Reducing Bilateral Asymmetry](https://comtradeapi.un.org/files/v1/app/wiki/Guidelines_on_Analyzing_and_Reducing_Bilateral_Asymmetry-23_Apr_2019.pdf).
+- OECD, [Balanced trade statistics](https://oecd.org/en/data/datasets/oecd-balanced-trade-statistics.html) (BIMTS).
+- Valderas-Jaramillo, J. M., Rueda-Cantuche, J. M. and Ahmad, N. (2026). Why do trade statistics and national accounts' trade values differ? The role of misclassification of products. *Economic Systems Research*, 38(2), 275-292. [doi:10.1080/09535314.2026.2634802](https://doi.org/10.1080/09535314.2026.2634802).
 
 ---
 
@@ -884,7 +1025,7 @@ python trade_analyzer.py --update-cpi
 | Country | Name (`Egypt`) or Code (`818`) |
 | Product | `10`, `1001`, `100190`, `TOTAL`, `AG2`, `AG4`, `AG6` |
 | Direction | `M` (Imports) or `X` (Exports) |
-| Partners | `A` (All) or `S` (All, plus a focus on one partner) |
+| Partners | `A` (All) or `S` (a report on the trade with one partner) |
 | Metric | BACI: `V` (Value) or `Q` (Quantity); COMTRADE: from the list shown |
 
 ### File Locations
