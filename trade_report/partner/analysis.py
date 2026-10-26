@@ -324,6 +324,14 @@ class PartnerAnalysis:
         return [m for m in self.metrics if m.key in theirs and
                 (not m.unit_column or (m.unit and theirs[m.key].unit == m.unit))]
 
+    def side_estimates(self, key: str) -> set:
+        """The periods in which the partner's own figure for its trade with the reporter
+        includes the source's own estimates, for one metric."""
+        e = self.side.estimated.get(key) if self.side is not None else None
+        if e is None:
+            return set()
+        return {p for code, p in e.cells("Partner_Code") if code == self.q.reporter_code}
+
     def _mirror(self) -> dict[str, pd.DataFrame] | None:
         """COMTRADE: the reporter's figures for its trade with the partner beside the
         partner's own figures for the same trade, metric by metric, as each reports them."""

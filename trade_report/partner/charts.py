@@ -651,9 +651,14 @@ class PartnerCharts(Charts):
                       theirs=fmt.amount(row["Partner"], value))
         else:
             title = w("mirror_title_plain")
+        notes = [w("mirror_note")]
+        # The partner's own figures can include the source's estimates too
+        marked = [metric for metric in metrics if pa.side_estimates(metric.key) & set(self.shown)]
+        if marked:
+            notes.append(PartnerWords(pa.side).estimate_note(marked))
         self.save(fig, "08_both_reports.png", title,
                   w("mirror_sub", reporter=t.reporter, partner=t.partner, flow=t.flow, to=t.to,
-                    side_flow=t.side_flow, other_to=t.other_to), w("mirror_note"),
+                    side_flow=t.side_flow, other_to=t.other_to), "\n".join(notes),
                   metrics=metrics)
 
     # -- 9 ------------------------------------------------------------------------------

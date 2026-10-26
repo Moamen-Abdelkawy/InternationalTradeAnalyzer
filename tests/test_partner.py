@@ -166,6 +166,27 @@ class BothCountriesFigures(unittest.TestCase):
         self.assertEqual(list(self.pa.side_partners["Name"]), ["Egypt", "Delta"])
         self.assertAlmostEqual(self.pa.side_partners["Share"].iloc[0], 100 / 180)
 
+    def test_the_partners_own_estimates_are_marked(self):
+        side = rows([(2020, 818, "Egypt", "100110", 140.0, 14.0),
+                     (2021, 818, "Egypt", "100110", 100.0, 10.0),
+                     (2021, 5, "Delta", "100110", 80.0, 8.0)])
+        side["quantity_estimated"] = (side["Period"] == 2021) & (side["Partner_Code"] == 818)
+        q = query([2020, 2021, 2022], partner=1)
+        q.source, q.estimated_by = "COMTRADE", "UN Comtrade"
+        reason = "Alpha has not reported this year to COMTRADE"
+        data = partner_data(side, {2022: reason}, "COMTRADE")
+        data.partner_views.side[0].estimated_by = "UN Comtrade"
+        pa = PartnerAnalysis(q, data)
+        self.assertEqual(pa.side_estimates("quantity"), {2021})     # Alpha's figure for Egypt
+        self.assertEqual(pa.side_estimates("value"), set())
+        with contextlib.redirect_stdout(io.StringIO()):
+            outputs, _ = build_report(q, data, Path(tempfile.mkdtemp()))
+        with zipfile.ZipFile(outputs.workbook) as book:
+            strings = book.read("xl/sharedStrings.xml").decode()
+        self.assertIn("are estimates by UN Comtrade (quantity), not figures Alpha reported",
+                      strings)
+        self.assertIn("08_both_reports.png", {path.name for path in outputs.charts})
+
     def test_a_partner_that_reported_nothing(self):
         q = query([2020, 2021], partner=1)
         q.source = "COMTRADE"

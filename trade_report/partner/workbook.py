@@ -482,12 +482,14 @@ class PartnerBook(Book):
             metric = next(m for m in pa.metrics if m.key == key)
             ws.write_string(row, 0, metric.heading, self.f["section"])
             kind = self.metric_kind(metric)
+            side = pa.side_estimates(key)
             columns = [
                 Column("Month" if self.q.monthly else "Year", frame["Period"].tolist(),
                        self.period_kind, 10),
                 Column(f"As {t.reporter} reports it", frame["Reporter"].tolist(), kind, 20,
                        marks=self.partner_marks(metric)),
-                Column(f"As {t.partner} reports it", frame["Partner"].tolist(), kind, 20),
+                Column(f"As {t.partner} reports it", frame["Partner"].tolist(), kind, 20,
+                       marks=[p in side for p in frame["Period"]] if side else None),
                 Column(f"Difference: {t.reporter} − {t.partner}", frame["Difference"].tolist(),
                        kind, 20),
                 Column(f"Ratio: {t.reporter} / {t.partner}", frame["Ratio"].tolist(),
@@ -505,7 +507,15 @@ class PartnerBook(Book):
                          f"{reason}.")
         for text in notes:
             row = self.note(ws, row, text)
-        self.estimate_note(ws, row)
+        row = self.estimate_note(ws, row)
+        flagged = [m.label.lower() for m in pa.metrics
+                   if m.key in pa.mirror and pa.side_estimates(m.key)]
+        if flagged:
+            self.note(ws, row, f"Figures in blue in the column 'As {t.partner} reports it' are "
+                               f"estimates by {pa.side_query.estimated_by} "
+                               f"({', '.join(flagged)}), not figures {t.partner} reported; they "
+                               f"are used as {self.q.source} gives them, and the Source estimates "
+                               "sheet lists each one.", "estimate_note")
 
     def other_sheet(self):
         pa, q, t = self.pa, self.q, self.t
