@@ -29,7 +29,7 @@ Before you begin, make sure you have:
 
 - A computer running **Windows**, **macOS**, or **Linux**
 - An internet connection
-- At least **8 GB of free disk space** for the BACI database, plus about **3 GB** more if you build the optional fast BACI cache ([Step 7.4](#step-74-speed-up-baci-queries-optional))
+- For BACI queries only: at least **8 GB of free disk space** for the BACI database, plus about **3 GB** more if you build the optional fast BACI cache ([Step 7.4](#step-74-speed-up-baci-queries-optional))
 - A web browser
 - **Microsoft Excel** and **Microsoft Word**, or free alternatives such as LibreOffice Calc and Writer, to open the results
 
@@ -139,7 +139,7 @@ git clone https://github.com/Moamen-Abdelkawy/InternationalTradeAnalyzer.git
 
 ## 4. Setting Up the BACI Database
 
-The BACI database provides harmonized bilateral trade data. It's a large file that needs to be downloaded separately.
+The BACI database provides harmonized bilateral trade data. It's a large file that needs to be downloaded separately. You need it only for BACI queries: if you use COMTRADE only, skip to [Section 5](#5-obtaining-a-comtrade-api-key).
 
 ### Step 4.1: Download BACI Data
 
@@ -195,7 +195,7 @@ The BACI database provides harmonized bilateral trade data. It's a large file th
 
 ## 5. Obtaining a COMTRADE API Key
 
-To download trade data from the UN COMTRADE database, you need a free API key.
+COMTRADE is the analyzer's main data source: each country's own reports to the United Nations. To download its data, you need a free API key.
 
 > **Using BACI only?** BACI queries run without a key, but the key is worth getting: with it, every BACI report checks its totals against the reporter's own COMTRADE figures ([Section 9.9](#99-baci-and-comtrade-strengths-limits-and-which-to-use)); without it, the report says the check was not made. BACI queries also need an internet connection, because the analyzer reads COMTRADE's public lists of country names and product descriptions.
 
@@ -778,7 +778,7 @@ Both databases come from the same reports, those countries send to the United Na
 
 A flow in BACI is one year, one exporter, one importer and one HS 6-digit product: the readme of version 202601 describes the files as "Trade flows at the year - exporter - importer - product level. Products in Harmonized System 6-digit nomenclature." According to CEPII's method paper, BACI provides a reconciled figure "for each flow reported at least by one of the partners", and "When only one of the reports is missing, the non missing declaration is used". Quantities reported in units other than tons are converted to tons using "implicit rates of conversion" that CEPII estimates. So BACI's figures are CEPII's estimates built from the two countries' reports; the analyzer uses them exactly as BACI gives them.
 
-**The limitation: the same trade counted twice.** Because BACI pairs the two reports product by product, at the 6-digit level, it can only pair them when both countries put the goods under the same 6-digit code. When they use **different** codes, BACI sees two flows, each reported by one country only, and keeps both. Every total above 6 digits (a heading, a chapter, all products, and so every All-partners or partner total the analyzer builds from BACI) then counts that trade twice. It takes two conditions: both countries report the flow, and they classify it differently. Anyone who adds up BACI's rows gets the same totals; the analyzer neither causes nor corrects it.
+**The limitation: the same trade counted twice.** Because BACI pairs the two reports product by product, at the 6-digit level, it can only pair them when both countries put the goods under the same 6-digit code. When they use **different** codes, BACI sees two flows, each reported by one country only, and keeps both. Every total above 6 digits (a heading, a chapter, all products, and so every All-partners or partner total the analyzer builds from BACI) then counts that trade twice. It takes two conditions: both countries report the flow, and they classify it differently. Anyone who adds up BACI's rows gets the same totals; the analyzer neither causes nor corrects it. CEPII's documentation describes how each flow is reconciled, but no step that pairs reports filed under different codes, and the release notes of version 202601 (January 2026) list no such change.
 
 **An example, from the source rows: wheat (HS `1001`) from the Russian Federation to Egypt.** Egypt declares its wheat imports as durum wheat (`100119`); Russia declares the same exports as other wheat (`100199`). In HS 1992, BACI's durum wheat is `100110` and its other wheat is `100190`. These are the two rows of the BACI file for 2020 (`BACI_HS92_Y2020_V202601.csv`; value `v` in thousand USD, quantity `q` in tons):
 

@@ -1,6 +1,6 @@
 # International Trade Analyzer
 
-A Python tool for analyzing international bilateral trade flows using two complementary data sources: the **BACI database** and the **UN COMTRADE API**.
+A Python tool for analyzing international bilateral trade flows with the **UN COMTRADE API**, the trade statistics countries report to the United Nations, and the **BACI database**, which CEPII builds from the same reports.
 
 ---
 
@@ -13,8 +13,8 @@ Every query produces a folder with an Excel workbook holding the full query data
 ### Key Features
 
 - **Dual Data Source Support**
-  - **BACI Database**: Bilateral trade data from 1995-2024 (annual), in which CEPII reconciles the exporter's and the importer's reports into one figure per flow and HS 6-digit product. **Read its [known limitation](#known-limitation-of-baci-the-same-trade-counted-twice) before using its totals for one country**
-  - **UN COMTRADE API**: Trade data from 1962-present with annual and monthly frequency options, as reported by countries
+  - **UN COMTRADE API**, the main source: trade data from 1962 to the present, annual and monthly, as reported by countries
+  - **BACI Database** (CEPII): annual data from 1995 to 2024, built from the same reports, in which CEPII reconciles the exporter's and the importer's reports into one figure per flow and HS 6-digit product; it also covers countries that do not report to COMTRADE. See [which one to use](#choosing-between-comtrade-and-baci)
 
 - **Three Ways to Run**
   - Interactive: a guided step-by-step workflow with input validation and fuzzy country-name suggestions
@@ -74,17 +74,26 @@ pip install -r requirements.txt
 python trade_analyzer.py
 
 # Or run one query from the command line
-python trade_analyzer.py --source comtrade --reporter Egypt --product 1001 --flow M --period 2015-2024
+python trade_analyzer.py --source comtrade --reporter USA --product 1201 --flow X --period 2015-2024
 
 # Or run every query of a CSV file
 python trade_analyzer.py --batch batch_example.csv
 ```
 
-> **Note**: You'll need to download the BACI database and obtain a COMTRADE API key before using the tool. See the [Usage Guide](Usage_Guide.md) for detailed setup instructions.
+> **Note**: You'll need a free COMTRADE API key. BACI queries also need the BACI files, a free download from CEPII. See the [Usage Guide](Usage_Guide.md) for detailed setup instructions.
 
 ---
 
 ## Data Sources
+
+### UN COMTRADE API
+
+The United Nations COMTRADE database is the largest repository of international trade statistics, providing data as reported by individual countries. It is the analyzer's main source: each figure is the reporting country's own.
+
+- **Coverage**: 1962-present (annual and monthly data)
+- **Classification**: HS (Harmonized System), in the edition each reporter used each year (HS 1992 to HS 2022)
+- **Metrics**: Primary Value, FOB Value, CIF Value, Quantity, Net Weight, Gross Weight
+- **Source**: [UN COMTRADE](https://comtradeplus.un.org/)
 
 ### BACI Database (CEPII)
 
@@ -96,45 +105,11 @@ BACI (Base pour l'Analyse du Commerce International) is built by CEPII from COMT
 - **Metrics**: Trade Value (thousand USD in BACI), Quantity (Metric Tons)
 - **Source**: [CEPII BACI Database](https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37)
 
-#### Known Limitation of BACI: the Same Trade Counted Twice
+### Choosing between COMTRADE and BACI
 
-> **Important.** BACI pairs the exporter's report with the importer's report product by product, at the HS 6-digit level, and keeps a flow that only one of the two countries reports. When the two countries declare the same goods under **different 6-digit codes**, BACI cannot pair the two reports and keeps **both**, each as a flow of its own. Any total above 6 digits, such as a heading (`1001`), a chapter or all products, then counts that trade **twice**. This is in BACI's data itself: anyone who adds up its rows gets the same totals. This program uses BACI as it is and does not cause or correct it.
-
-**An example: Egypt's wheat imports (HS `1001`).** Egypt declares essentially all its wheat imports as durum wheat (`100119`), while its suppliers declare much of the same wheat as other wheat (`100199`). BACI keeps Egypt's reports under durum wheat (`100110` in HS 1992) and the suppliers' reports under other wheat (`100190`), so its total for Egypt's wheat imports is well above Egypt's own:
-
-| Year | Egypt's own report (COMTRADE), million USD | BACI, million USD | BACI / Egypt's report |
-|------|---:|---:|---:|
-| 2015 | 2,523.0 | 3,377.8 | 1.34 |
-| 2016 | 2,238.5 | 4,069.2 | 1.82 |
-| 2017 | 2,636.5 | 4,425.1 | 1.68 |
-| 2018 | 2,787.7 | 4,967.3 | 1.78 |
-| 2019 | 2,975.5 | 5,646.1 | 1.90 |
-
-In tons, BACI's rows for 2018 add up to 22.1 million tons of wheat, against 10.8 million tons in Egypt's own report (the weight on its 6-digit records, which UN Comtrade estimated; its record for `1001` itself has no weight). For the Russian Federation alone, BACI's two rows for 2020 are, value for value and ton for ton, Egypt's report (1,950.9 million USD and 6,845,303 t, as durum) and Russia's report (1,796.6 million USD and 8,254,550 t, as other wheat) of the same trade. Figures from BACI version 202601 and from COMTRADE, retrieved in October 2026; the [Usage Guide](Usage_Guide.md#99-baci-and-comtrade-strengths-limits-and-which-to-use) shows the source rows.
-
-CEPII names this cause itself: the two reports of a flow differ partly because of "discrepancies in the classification of a given product" (CEPII's BACI page). Its documentation describes how each flow is reconciled, but no step that pairs reports filed under different codes, and the release notes of version 202601 (January 2026) list no such change. The United Nations lists "improper declaration of product classification at the customs border" among the known causes of differences between two countries' reports, and recent research treats product misclassification as a source of discrepancies in its own right.
-
-**Which source to use**
-- **BACI is the right choice, and often the only one**, for countries or years not reported to COMTRADE (BACI fills them in from their partners' reports: the Russian Federation's trade after 2021, for example), for consistent HS 1992 series from 1995 to 2024, for comparisons across many countries at the HS 6-digit level, and for quantities and unit values that are comparable across countries. CEPII states that BACI "was mostly designed for high disaggregated studies".
-- **COMTRADE is the safer choice for one country's own trade**, especially for totals at 4 digits and above: each figure is that country's own report, so nothing is counted twice. It has limits of its own: each country's classification choices stay as they are (Egypt's wheat appears as durum), a country that does not report has no figures, and two countries' reports of the same trade usually differ (the partner report shows both).
-- **Every BACI report checks its totals against COMTRADE.** It sets BACI's total for each year beside the reporter's own COMTRADE figure for the same code and flow (and for the partner, in a partner report), with the ratio, in a **COMTRADE check** sheet and in the report's checks. No figure of the report uses the COMTRADE figures. The check needs a COMTRADE API key; without one, the report says it was not made.
-- **Where BACI's total is well above the reporter's own**, look at BACI's 6-digit rows (the Products sheet). Two sibling codes that each carry a large flow from the same partner are the sign of this limitation, though a genuine mix of both products looks the same.
-
-**References**
-- CEPII, [BACI database page](https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37), last updated 30 January 2026.
-- CEPII, [BACI release notes, version 202601](https://www.cepii.fr/DATA_DOWNLOAD/baci/doc/release_notes_202601.pdf), P. Cotterlaz, 22 January 2026.
-- Gaulier, G. and Zignago, S. (2010). [BACI: International Trade Database at the Product-Level. The 1994-2007 Version](https://www.cepii.fr/CEPII/en/publications/wp/abstract.asp?NoDoc=2726). CEPII Working Paper 2010-23. The method paper CEPII asks BACI users to cite.
-- United Nations Statistics Division (2019). [Guidelines on Analyzing and Reducing Bilateral Asymmetry](https://comtradeapi.un.org/files/v1/app/wiki/Guidelines_on_Analyzing_and_Reducing_Bilateral_Asymmetry-23_Apr_2019.pdf).
-- Valderas-Jaramillo, J. M., Rueda-Cantuche, J. M. and Ahmad, N. (2026). Why do trade statistics and national accounts' trade values differ? The role of misclassification of products. *Economic Systems Research*, 38(2), 275-292. [doi:10.1080/09535314.2026.2634802](https://doi.org/10.1080/09535314.2026.2634802).
-
-### UN COMTRADE API
-
-The United Nations COMTRADE database is the largest repository of international trade statistics, providing data as reported by individual countries.
-
-- **Coverage**: 1962-present (annual and monthly data)
-- **Classification**: HS (Harmonized System), in the edition each reporter used each year (HS 1992 to HS 2022)
-- **Metrics**: Primary Value, FOB Value, CIF Value, Quantity, Net Weight, Gross Weight
-- **Source**: [UN COMTRADE](https://comtradeplus.un.org/)
+- **COMTRADE for one country's own trade**, the usual case: each figure is that country's own report, the totals for a heading, a chapter or all products are its own, and it has the latest years and monthly data. A country that does not report has no figures, and two countries' reports of the same trade usually differ; the partner report shows both.
+- **BACI where COMTRADE cannot help**: countries or years not reported to COMTRADE (BACI fills them in from their partners' reports: the Russian Federation's trade after 2021, for example), consistent HS 1992 series from 1995 to 2024, comparisons across many countries at the HS 6-digit level, and quantities in tons that are comparable across countries.
+- **BACI's totals above 6 digits are checked against COMTRADE.** BACI pairs the two countries' reports product by product. When they declare the same goods under different 6-digit codes, it keeps both reports, and a total for a heading, a chapter or all products counts that trade twice: Egypt's wheat imports in BACI, for example, are 1.3 to 1.9 times Egypt's own reported figures in 2015–2019. So every BACI report sets its totals beside the reporter's own COMTRADE figures, in a **COMTRADE check** sheet. The [Usage Guide](Usage_Guide.md#99-baci-and-comtrade-strengths-limits-and-which-to-use) shows the source rows, the evidence and the references.
 
 ---
 
@@ -180,30 +155,34 @@ output/Egypt_imp_HS1001_2015-2024_BACI/
 
 ## Sample Output
 
-These charts come from COMTRADE: Egypt's wheat imports, 2015–2024, as Egypt reports them (`--source comtrade --reporter Egypt --product 1001 --flow M --period 2015-2024`, with `--partner "Russian Federation"` for the partner report), and Egypt's cement exports, 2021–2024 (a query of `batch_example.csv`).
+These charts come from COMTRADE: the USA's soybean exports, 2015–2024, as the USA reports them (`--source comtrade --reporter USA --product 1201 --flow X --period 2015-2024`, with `--partner China` for the partner report), and Egypt's cement exports, 2021–2024 (a query of `batch_example.csv`).
 
 ### Overview: the trend with the headline figures
-COMTRADE has no total net weight for Egypt's wheat imports in most of these years, so those years show as Missing rather than zero, and so does the unit value. The footnote states which figures UN Comtrade estimated.
+The USA reports the value and the net weight of every year, so every year has its unit value too.
 
-![Overview of Egypt's wheat imports](docs/images/wheat_imports_overview.png)
+![Overview of the USA's soybean exports](docs/images/soybeans_exports_overview.png)
 
-### The largest suppliers over the whole period
-![Egypt's largest wheat suppliers](docs/images/wheat_imports_suppliers.png)
+### The largest markets over the whole period
+![The USA's largest soybean markets](docs/images/soybeans_exports_markets.png)
 
-### Year by year, supplier by supplier
-![Egypt's wheat imports by supplier and year](docs/images/wheat_imports_by_year.png)
+### Year by year, market by market
+![The USA's soybean exports by market and year](docs/images/soybeans_exports_by_year.png)
 
 ### The trade with one partner
-A partner query gets a report of its own. Russian Federation's share and rank in Egypt's wheat imports, year by year,
+A partner query gets a report of its own. China's share and rank in the USA's soybean exports, year by year: it fell from 57% in 2017 to 18% in 2018, and China was still the largest market,
 
-![Russian Federation's share of Egypt's wheat imports](docs/images/wheat_imports_russia_share.png)
+![China's share of the USA's soybean exports](docs/images/soybeans_china_share.png)
 
-and the same trade as each country reports it: the Russian Federation has not reported to COMTRADE since 2021, so its side is Missing from 2022.
+China's unit value against all markets together and the largest other markets,
 
-![Egypt's and the Russian Federation's figures for the same trade](docs/images/wheat_russia_both_reports.png)
+![Unit values of China and the USA's other soybean markets](docs/images/soybeans_china_prices.png)
+
+and the same trade as each country reports it. Two of China's net weights, for 2016 and 2023, are UN Comtrade estimates, and the footnote says so.
+
+![The USA's and China's figures for the same trade](docs/images/soybeans_china_both_reports.png)
 
 ### COMTRADE: net weight in metric tons, value in million USD
-The footnote states which figures UN Comtrade estimated.
+Egypt reported no weights for these exports: every weight here is a UN Comtrade estimate, used as COMTRADE gives it and stated in the footnote, so the unit values rest on those estimates.
 
 ![Overview of Egypt's cement exports](docs/images/cement_exports_overview.png)
 
