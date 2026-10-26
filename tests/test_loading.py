@@ -32,6 +32,13 @@ class Codes(unittest.TestCase):
         self.assertEqual(an.normalize_hs_code("401"), "0401")
         self.assertEqual(an.normalize_hs_code("40110"), "040110")
         self.assertEqual(an.normalize_hs_code("0401"), "0401")
+
+    def test_country_lists_without_the_baci_download(self):
+        # COMTRADE-only users have no BACI folder: the lists come from data/meta
+        an = analyzer(Path(tempfile.mkdtemp()) / "no BACI download")
+        self.assertIn("Egypt", set(an.baci_country_codes["country_name"]))
+        self.assertIn("Türkiye", set(an.baci_country_codes["country_name"]))   # repaired
+        self.assertIn("100190", set(an.baci_product_codes["code"]))
         self.assertEqual(an.normalize_hs_code("4011"), "4011")
         self.assertEqual(an.normalize_hs_code("01061"), "01061")   # a zero-led odd code stays
 

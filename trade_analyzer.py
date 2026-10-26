@@ -60,6 +60,8 @@ BACI_VERSION = "V202601"
 BACI_YEARS = (1995, 2024)
 # Which HS editions each code exists in, built from COMTRADE's code lists
 EDITIONS_FILE = Path(__file__).resolve().parent / "data" / "meta" / "hs_editions.csv"
+# Copies of the BACI country and product lists, for when the BACI files are not downloaded
+META_DIR = Path(__file__).resolve().parent / "data" / "meta"
 # Special product codes: digits kept, description, and what one product row then stands for
 SPECIAL = {"TOTAL": (0, "All products", "all products together"),
            "AG2": (2, "All products by HS chapter", "HS chapter"),
@@ -245,16 +247,20 @@ class TradeAnalyzer:
         return self._subscription_key
 
     def load_baci_reference_data(self):
-        """Load BACI country and product code mappings"""
+        """Load BACI country and product code mappings: from the BACI folder, or from their
+        copies in data/meta when the BACI files are not downloaded, since COMTRADE queries
+        use the country list too."""
+        folder = (self.baci_dir if (self.baci_dir / f"country_codes_{BACI_VERSION}.csv").exists()
+                  else META_DIR)
         try:
-            self.baci_country_codes = pd.read_csv(self.baci_dir / f"country_codes_{BACI_VERSION}.csv",
+            self.baci_country_codes = pd.read_csv(folder / f"country_codes_{BACI_VERSION}.csv",
                                                   keep_default_na=False)
             # CEPII's file stores some names double-encoded ("TÃ¼rkiye"), so decode them back
             self.baci_country_codes['country_name'] = self.baci_country_codes['country_name'].apply(
                 self.fix_double_encoding)
             # Read product codes as text so leading zeros survive ("010111", not 10111)
             self.baci_product_codes = pd.read_csv(
-                self.baci_dir / f"product_codes_HS92_{BACI_VERSION}.csv", dtype={'code': str})
+                folder / f"product_codes_HS92_{BACI_VERSION}.csv", dtype={'code': str})
             self.baci_product_codes['code'] = self.baci_product_codes['code'].str.zfill(6)
             print("✓ BACI reference data loaded\n")
         except Exception as e:
